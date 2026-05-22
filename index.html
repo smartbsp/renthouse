@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#4A90D9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="電費分攤">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>電費分攤計算機</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Roboto, 'Noto Sans TC', sans-serif;
+    max-width: 100%; margin: 0 auto; padding: 16px;
+    background: linear-gradient(135deg, #e8edf5 0%, #f0f4f8 100%);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* == Card == */
+  .card {
+    background: #fff; border-radius: 20px; padding: 24px 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04);
+    margin-bottom: 20px;
+    transition: box-shadow 0.2s;
+  }
+
+  /* == Header == */
+  h1 { text-align: center; margin: 0 0 2px; font-size: 22px; font-weight: 700; color: #1a1a2e; letter-spacing: 1px; }
+  .subtitle { text-align: center; color: #8e99a4; font-size: 13px; margin-bottom: 16px; }
+
+  /* == Section Title == */
+  .section-title {
+    font-weight: 700; color: #2c3e50; margin: 18px 0 10px; padding: 6px 0 6px 12px;
+    border-left: 3px solid #4A90D9; font-size: 14px;
+    background: none; border-bottom: none;
+    letter-spacing: 0.5px;
+  }
+  .section-title:first-child { margin-top: 0; }
+
+  /* == Row & Col == */
+  .row { display: flex; gap: 12px; margin-bottom: 12px; }
+  .col { flex: 1; min-width: 0; }
+
+  /* == Label == */
+  label {
+    display: block; font-size: 11px; color: #7b8ba0; margin-bottom: 4px;
+    font-weight: 600; text-transform: none; letter-spacing: 0.3px;
+  }
+
+  /* == Input == */
+  input {
+    width: 100%; padding: 11px 14px; border: 1.5px solid #e0e5ec;
+    border-radius: 12px; font-size: 16px; background: #f8f9fb;
+    -webkit-appearance: none; appearance: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    color: #2c3e50;
+  }
+  input:focus {
+    outline: none; border-color: #4A90D9; background: #fff;
+    box-shadow: 0 0 0 3px rgba(74,144,217,0.12);
+  }
+  input:read-only {
+    background: #edf1f5; color: #5a6b7c; font-weight: 500;
+  }
+  input[type="date"] { color-scheme: light; }
+
+  /* == Meter Hints == */
+  .meter-hint {
+    font-size: 12px; color: #8e99a4; text-align: right;
+    margin-top: 2px; min-height: 16px;
+  }
+
+  /* == Buttons == */
+  button {
+    width: 100%; padding: 14px; border: none; border-radius: 14px;
+    font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px;
+    transition: transform 0.1s, box-shadow 0.15s, opacity 0.15s;
+    letter-spacing: 0.5px;
+  }
+  button:active { transform: scale(0.97); opacity: 0.85; }
+  button.primary { background: linear-gradient(135deg, #4A90D9, #3b7dc4); color: #fff; box-shadow: 0 2px 8px rgba(74,144,217,0.25); }
+  button.secondary { background: #edf1f5; color: #4a5568; }
+  button.green { background: linear-gradient(135deg, #2ecc71, #27ae60); color: #fff; box-shadow: 0 2px 8px rgba(46,204,113,0.25); }
+  button.danger { background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff; }
+  button.small { padding: 7px 16px; font-size: 12px; width: auto; border-radius: 8px; margin: 0; font-weight: 500; }
+  .btn-row { display: flex; gap: 10px; margin-top: 14px; }
+  .btn-row button { margin: 0; flex: 1; }
+
+  /* == Result == */
+  .result {
+    margin-top: 16px; padding: 20px;
+    background: linear-gradient(135deg, #eafaf1, #f0faf4);
+    border-radius: 16px; display: none;
+    border: 1px solid rgba(46,204,113,0.15);
+  }
+  .result.show { display: block; }
+  .result-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+  .result-row.total {
+    font-weight: 700; font-size: 18px;
+    border-top: 2px solid #2ecc71; margin-top: 10px; padding-top: 12px;
+    color: #1e8449;
+  }
+  .result-label { color: #5a6b7c; }
+  .note { font-size: 12px; color: #8e99a4; margin-top: 10px; text-align: center; }
+  hr { border: none; border-top: 1px solid #e8edf2; margin: 12px 0; }
+
+  /* == Table == */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  th, td { padding: 6px 4px; text-align: center; border-bottom: 1px solid #eef2f7; word-break: break-all; }
+  th {
+    background: #f4f7fb; font-weight: 600; color: #5a6b7c;
+    position: sticky; top: 0; font-size: 11px;
+    letter-spacing: 0.3px; padding: 7px 4px; }
+  td { color: #2c3e50; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  .history-wrap {
+    max-height: 380px; overflow: auto; -webkit-overflow-scrolling: touch;
+    border-radius: 12px; border: 1px solid #eef2f7;
+  }
+  .empty-msg { text-align: center; color: #b0b9c4; padding: 32px; font-size: 14px; }
+
+  /* == Del / Edit Btn == */
+  .del-btn { color: #dc3545; cursor: pointer; font-size: 15px; line-height: 1; background: none; border: none; padding: 3px 5px; border-radius: 6px; transition: background 0.15s; white-space: nowrap; }
+  .del-btn:hover { background: #fde8ec; }
+  .del-btn:active { opacity: 0.6; }
+  .action-cell { white-space: nowrap; width: 1%; }
+
+  /* == Header Bar == */
+  .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .header-bar .section-title { margin: 0; border: none; padding-left: 0; }
+
+  /* == Total Summary == */
+  .total-summary {
+    display: flex; gap: 14px; justify-content: space-around;
+    padding: 12px 4px; font-size: 13px; color: #5a6b7c;
+    background: #f8f9fb; border-radius: 10px; margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .total-summary b { color: #2c3e50; }
+
+  /* == Meter Area Card == */
+  .meter-area {
+    border-radius: 12px; padding: 14px; margin-bottom: 8px;
+    border: 1px solid rgba(0,0,0,0.04);
+  }
+  .meter-area-a { background: #f5f8ff; border-color: #dce6f8; }
+  .meter-area-b { background: #f2faf5; border-color: #d2ecd8; }
+  .meter-area-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+
+  /* == Clickable Row == */
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: #eaf2fb !important; }
+
+  /* == Modal == */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: 20px; padding: 28px 24px;
+    max-width: 400px; width: 100%; max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+  }
+  .modal h2 { font-size: 17px; margin: 0 0 14px; color: #2c3e50; text-align: center; font-weight: 700; }
+  .modal-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 14px; border-bottom: 1px solid #f0f2f5; }
+  .modal-row:last-child { border: none; }
+  .modal-label { color: #8e99a4; font-size: 13px; }
+  .modal-value { font-weight: 600; color: #2c3e50; }
+  .modal-close { margin-top: 16px; }
+
+  #totalKwh { font-weight: 700; color: #2c3e50; }
+  .hint-left { text-align: left; }
+
+  /* == Sort Headers == */
+  th.sortable { cursor: pointer; user-select: none; transition: background 0.15s; }
+  th.sortable:hover { background: #e8f0fe; }
+  .sort-arrow { font-size: 10px; margin-left: 2px; }
+</style>
+</head>
+<body>
+
+<div class="card" id="mainCard">
+  <h1>⚡ 電費分攤</h1>
+  <p class="subtitle">兩戶用電分攤計算</p>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div class="section-title" style="margin:0;border:none;padding-left:0;">📋 台電帳單</div>
+    <button class="small" onclick="clearForm()" style="background:#4A90D9;color:#fff;margin:0;">＋ 新增</button>
+  </div>
+  <div class="row">
+    <div class="col"><label>帳單月份</label><input type="text" id="billMonth" placeholder="" readonly></div>
+    <div class="col"></div>
+  </div>
+  <div class="row">
+    <div class="col"><label>起日</label><input type="date" id="startDate" onchange="autoEndDate()"></div>
+    <div class="col"><label>訖日</label><input type="date" id="endDate" onchange="autoBillMonth();autoMeterFromEnd()"></div>
+  </div>
+  <div class="row">
+    <div class="col"><label>總電費 (元)</label><input type="number" id="totalBill" inputmode="decimal" placeholder="應繳總金額" oninput="updateAvgPrice()"></div>
+    <div class="col"><label>公共電費 (元)</label><input type="number" id="publicElec" inputmode="decimal"></div>
+  </div>
+  <div class="row">
+    <div class="col"><label>基本底度費 (元)</label><input type="number" id="baseFee" inputmode="decimal" value="40"></div>
+    <div class="col"><label>計費度數</label><input type="number" id="billingKwh" step="10" inputmode="decimal" placeholder="台電帳單度數" oninput="calcBoth();updateAvgPrice()"></div>
+  </div>
+  <div class="row">
+    <div class="col"><label>本次抄表日</label><input type="date" id="meterDate" onchange="autoMeterNext()"></div>
+    <div class="col"><label>下次抄表日</label><input type="date" id="meterDateNext" style="border-color:#e74c3c;background:#fff5f5;font-weight:600;"></div>
+  </div>
+
+  <div class="row">
+    <div class="col"><label>當期每度平均電價</label><input type="number" id="avgPricePerKwh" step="0.001" readonly placeholder="總電費÷計費度數"></div>
+    <div class="col"></div>
+  </div>
+  <div class="meter-hint hint-left" id="avgPriceHint"></div>
+
+  <div class="section-title">📊 分電表</div>
+  <div class="meter-area meter-area-a">
+    <div class="meter-area-title" style="color:#4A6FA5;">11F-1（戶A）</div>
+    <div class="row">
+      <div class="col"><label>上期分表度數</label><input type="number" id="meterAprev" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
+      <div class="col"><label>本期分表度數</label><input type="number" id="meterAcurr" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
+    </div>
+    <div style="font-size:13px;color:#888;text-align:right;min-height:18px;" id="meterAdisplay"></div>
+  </div>
+  <div class="meter-area meter-area-b">
+    <div class="meter-area-title" style="color:#2E7D32;">11F-2（戶B）</div>
+    <div class="row">
+      <div class="col"><label>上期分表度數</label><input type="number" id="meterBprev" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
+      <div class="col"><label>本期分表度數</label><input type="number" id="meterBcurr" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
+    </div>
+    <div style="font-size:13px;color:#888;text-align:right;min-height:18px;" id="meterBdisplay"></div>
+  </div>
+  <div class="row">
+    <div class="col"><label>戶A 用電度數 (自動)</label><input type="number" id="meterA" step="0.1" readonly></div>
+    <div class="col"><label>戶B 用電度數 (自動)</label><input type="number" id="meterB" step="0.1" readonly></div>
+  </div>
+  <div class="row">
+    <div class="col"><label>總用電度數</label><input type="number" id="totalKwh" step="0.1" readonly></div>
+    <div class="col"><label>估算公電度數</label><input type="number" id="estPublicKwh" step="0.1" readonly placeholder="計費－總用電"></div>
+  </div>
+
+  <div style="display:flex;gap:6px;margin-top:4px;">
+    <button class="small" onclick="navRecord(-1)" style="flex:1;background:#eef4fb;color:#4A90D9;font-size:13px;margin:0;">◀ 上一期</button>
+    <button class="small" onclick="navRecord(1)" style="flex:1;background:#eef4fb;color:#4A90D9;font-size:13px;margin:0;">下一期 ▶</button>
+  </div>
+
+  <div class="btn-row">
+    <button class="primary" id="calcBtn" onclick="calcOrSave()">💾 暫存帳單</button>
+    <button class="secondary" onclick="clearForm()">清除</button>
+  </div>
+
+  <div class="result" id="result">
+    <div class="section-title">📄 試算結果</div>
+    <div class="result-row"><span class="result-label">計費期間</span><span id="r_period"></span></div>
+    <div class="result-row"><span class="result-label">總電費</span><span id="r_totalBill"></span></div>
+    <div class="result-row"><span class="result-label">公電 + 底度</span><span id="r_publicShare"></span></div>
+    <div class="result-row"><span class="result-label">每戶公電分攤</span><span id="r_publicPerHouse"></span></div>
+    <div class="result-row"><span class="result-label">總用電度數</span><span id="r_totalKwh2"></span></div>
+    <div class="result-row"><span class="result-label">每度單價</span><span id="r_pricePerKwh"></span></div>
+    <hr>
+    <div class="result-row"><span class="result-label">戶A 電費</span><span id="r_costA"></span></div>
+    <div class="result-row"><span class="result-label">戶B 電費</span><span id="r_costB"></span></div>
+    <div class="result-row total"><span class="result-label">應繳總額</span><span id="r_total"></span></div>
+    <button class="green" id="saveBtn" onclick="saveRecord()" style="margin-top:10px;">💾 儲存本期記錄</button>
+  </div>
+</div>
+</div>
+
+<div class="card" id="batchCard">
+  <div class="header-bar">
+    <span class="section-title">📝 批次輸入</span>
+    <div style="display:flex;gap:6px;">
+      <button class="small" onclick="addBatchRow()" style="background:#4A90D9;color:#fff;margin:0;">＋ 新增列</button>
+      <button class="small" onclick="toggleBatch()" style="background:#e9ecef;color:#495057;margin:0;" id="batchToggleBtn">− 收合</button>
+    </div>
+  </div>
+  <div id="batchContent">
+    <div style="font-size:12px;color:#4A90D9;margin-bottom:6px;">💡 建議先輸入「抄表日」，會自動推算起訖日與月份</div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:7%;">月份</th><th style="width:10%;">起日</th><th style="width:10%;">訖日</th><th style="width:10%;">抄表日</th>
+            <th style="width:9%;">A上期</th><th style="width:9%;">A本期</th><th style="width:7%;">A用電</th>
+            <th style="width:9%;">B上期</th><th style="width:9%;">B本期</th><th style="width:7%;">B用電</th>
+            <th style="width:4%;"></th>
+          </tr>
+        </thead>
+        <tbody id="batchBody">
+          <tr><td colspan="11" style="color:#b0b9c4;padding:20px;">點「＋ 新增列」開始輸入</td></tr>
+        </tbody>
+      </table>
+    </div>
+    </div>
+    <div class="btn-row">
+      <button class="green" onclick="saveBatch()">💾 批次儲存</button>
+      <button class="secondary" onclick="clearBatch()">清除全部</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="header-bar">
+    <span class="section-title">📜 歷史紀錄</span>
+  </div>
+  <div class="total-summary" id="totalSummary"></div>
+  <div style="display:flex;gap:6px;margin-bottom:10px;">
+    <select id="historyFilterMonth" onchange="renderHistory()" style="flex:1;padding:10px 14px;border:1.5px solid #e0e5ec;border-radius:14px;font-size:14px;background:#f8f9fb;color:#2c3e50;appearance:auto;">
+      <option value="">全部月份</option>
+    </select>
+    <select id="historyFilterPeriod" onchange="renderHistory()" style="flex:1;padding:10px 14px;border:1.5px solid #e0e5ec;border-radius:14px;font-size:14px;background:#f8f9fb;color:#2c3e50;appearance:auto;">
+      <option value="">全部期間</option>
+    </select>
+    <button class="small" onclick="renderHistory()" style="background:#4A90D9;color:#fff;border-radius:12px;padding:10px 14px;font-size:18px;white-space:nowrap;margin:0;">🔍</button>
+  </div>
+  <div class="history-wrap" id="historyWrap">
+    <div class="empty-msg" id="emptyMsg">尚無紀錄<br><span style="font-size:12px;color:#bbb;">計算後按「儲存本期記錄」</span></div>
+    <table id="historyTable" style="display:none;">
+      <thead>
+        <tr>
+          <th class="sortable" style="width:8%;" onclick="sortBy('billMonth')">月份<span class="sort-arrow" id="sa_billMonth"></span></th>
+          <th class="sortable" style="width:13%;" onclick="sortBy('period')">期間<span class="sort-arrow" id="sa_period"></span></th>
+          <th class="sortable" style="width:9%;" onclick="sortBy('totalBill')">總電費<span class="sort-arrow" id="sa_totalBill"></span></th>
+          <th class="sortable" style="width:7%;" onclick="sortBy('meterA')">A度<span class="sort-arrow" id="sa_meterA"></span></th>
+          <th class="sortable" style="width:7%;" onclick="sortBy('meterB')">B度<span class="sort-arrow" id="sa_meterB"></span></th>
+          <th class="sortable" style="width:8%;" onclick="sortBy('pricePerKwh')">單價<span class="sort-arrow" id="sa_pricePerKwh"></span></th>
+          <th class="sortable" style="width:8%;" onclick="sortBy('costA')">A $<span class="sort-arrow" id="sa_costA"></span></th>
+          <th class="sortable" style="width:8%;" onclick="sortBy('costB')">B $<span class="sort-arrow" id="sa_costB"></span></th>
+          <th style="width:5%;"></th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+  <div style="text-align:right;margin-top:8px;display:flex;gap:6px;justify-content:flex-end;">
+    <button class="small" onclick="printReport()" style="background:#e74c3c;color:#fff;margin:0;">🖨️ 列印</button>
+    <button class="small" onclick="exportReport()" style="background:#f39c12;color:#fff;margin:0;">📄 CSV</button>
+    <button class="small" onclick="exportBackup()" style="background:#27ae60;color:#fff;margin:0;">💾 備份</button>
+    <button class="small" onclick="document.getElementById('restoreFile').click()" style="background:#8e44ad;color:#fff;margin:0;">📥 還原</button>
+    <input type="file" id="restoreFile" accept=".json" onchange="importBackup(event)" style="display:none;">
+    <button class="small danger" onclick="clearHistory()">清除全部紀錄</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>⚡ 電費分攤明細</h2>
+    <div id="modalBody"></div>
+    <div style="display:flex;gap:6px;margin-top:10px;">
+      <button class="small" onclick="copyRecord()" style="background:#3498db;color:#fff;margin:0;flex:1;">📋 複製</button>
+      <button class="small" onclick="printRecord()" style="background:#e74c3c;color:#fff;margin:0;flex:1;">🖨️ 列印</button>
+    </div>
+    <button class="secondary modal-close" onclick="closeModal()">關閉</button>
+  </div>
+</div>
+
+<script>
+function autoEndDate() {
+  const start = document.getElementById('startDate').value;
+  if (!start) return;
+  const d = new Date(start);
+  d.setMonth(d.getMonth() + 2);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  document.getElementById('endDate').value = `${y}-${m}-${day}`;
+  autoBillMonth();
+  autoMeterFromEnd();
+  autoFillPrevReadings(start);
+}
+
+function autoFillPrevReadings(startDate) {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  if (records.length === 0) return;
+  const start = new Date(startDate);
+  let best = null, bestDiff = Infinity;
+  for (const r of records) {
+    if (!r.endDate) continue;
+    const ed = new Date(r.endDate);
+    const diff = Math.abs(ed - start);
+    if (diff < bestDiff && diff < 75 * 86400000) {
+      bestDiff = diff;
+      best = r;
+    }
+  }
+  if (!best) return;
+  if (best.meterAcurr) {
+    document.getElementById('meterAprev').value = best.meterAcurr;
+  }
+  if (best.meterBcurr) {
+    document.getElementById('meterBprev').value = best.meterBcurr;
+  }
+  calcBoth();
+}
+
+function calcUsage(prev, curr) {
+  const p = parseFloat(prev) || 0;
+  const c = parseFloat(curr) || 0;
+  return c >= p ? c - p : 0;
+}
+
+function calcBoth() {
+  const usageA = calcUsage(document.getElementById('meterAprev').value, document.getElementById('meterAcurr').value);
+  const usageB = calcUsage(document.getElementById('meterBprev').value, document.getElementById('meterBcurr').value);
+
+  document.getElementById('meterA').value = usageA > 0 ? usageA.toFixed(1) : '';
+  document.getElementById('meterB').value = usageB > 0 ? usageB.toFixed(1) : '';
+  document.getElementById('meterAdisplay').textContent = usageA > 0 ? '11F-1 用電：' + usageA.toFixed(1) + ' 度' : '';
+  document.getElementById('meterBdisplay').textContent = usageB > 0 ? '11F-2 用電：' + usageB.toFixed(1) + ' 度' : '';
+
+  const total = usageA + usageB;
+  document.getElementById('totalKwh').value = total > 0 ? total.toFixed(1) : '';
+
+  const billingKwh = parseFloat(document.getElementById('billingKwh').value) || 0;
+  const estPublic = billingKwh - total;
+  document.getElementById('estPublicKwh').value = (billingKwh > 0 && total > 0) ? estPublic.toFixed(1) : '';
+
+  updateCalcBtn();
+}
+
+function updateCalcBtn() {
+  const totalKwh = parseFloat(document.getElementById('totalKwh').value) || 0;
+  const btn = document.getElementById('calcBtn');
+  if (totalKwh > 0) {
+    btn.textContent = '🧮 計算';
+  } else {
+    btn.textContent = '💾 暫存帳單';
+  }
+}
+
+function calcOrSave() {
+  const totalKwh = parseFloat(document.getElementById('totalKwh').value) || 0;
+  if (totalKwh > 0) {
+    calculate();
+  } else {
+    saveRecord();
+  }
+}
+
+function getPeriodLabel() {
+  const start = document.getElementById('startDate').value;
+  const end = document.getElementById('endDate').value;
+  if (start && end) {
+    const fmt = (d) => {
+      const parts = d.split('-');
+      return (parseInt(parts[0]) - 1911) + '/' + parts[1] + '/' + parts[2];
+    };
+    return fmt(start) + '~' + fmt(end);
+  }
+  return '--';
+}
+
+function calculate() {
+  const totalBill = parseFloat(document.getElementById('totalBill').value) || 0;
+  const totalKwh = parseFloat(document.getElementById('totalKwh').value) || 0;
+  const publicElec = parseFloat(document.getElementById('publicElec').value) || 0;
+  const baseFee = parseFloat(document.getElementById('baseFee').value) || 0;
+  const meterA = parseFloat(document.getElementById('meterA').value) || 0;
+  const meterB = parseFloat(document.getElementById('meterB').value) || 0;
+
+  if (totalBill === 0) { alert('請輸入總電費'); return; }
+  if (totalKwh === 0) {
+    document.getElementById('r_period').textContent = getPeriodLabel();
+    document.getElementById('r_totalBill').textContent = totalBill.toFixed(0) + ' 元';
+    document.getElementById('r_publicShare').textContent = publicTotal.toFixed(0) + ' 元 (' + publicElec.toFixed(0) + '+' + baseFee.toFixed(0) + ')';
+    document.getElementById('r_publicPerHouse').textContent = publicPerHouse.toFixed(1) + ' 元/戶';
+    document.getElementById('r_totalKwh2').textContent = '尚未輸入分電表';
+    document.getElementById('r_pricePerKwh').textContent = '--';
+    document.getElementById('r_costA').textContent = '--';
+    document.getElementById('r_costB').textContent = '--';
+    document.getElementById('r_total').textContent = '--';
+    document.getElementById('result').classList.add('show');
+    return;
+  }
+
+  const publicTotal = publicElec + baseFee;
+  const publicPerHouse = publicTotal / 2;
+  const netBill = totalBill - publicTotal;
+  const pricePerKwh = totalKwh > 0 ? netBill / totalKwh : 0;
+
+  const costA = meterA * pricePerKwh + publicPerHouse;
+  const costB = meterB * pricePerKwh + publicPerHouse;
+
+  document.getElementById('r_period').textContent = getPeriodLabel();
+  document.getElementById('r_totalBill').textContent = totalBill.toFixed(0) + ' 元';
+  document.getElementById('r_publicShare').textContent = publicTotal.toFixed(0) + ' 元 (' + publicElec.toFixed(0) + '+' + baseFee.toFixed(0) + ')';
+  document.getElementById('r_publicPerHouse').textContent = publicPerHouse.toFixed(1) + ' 元/戶';
+  document.getElementById('r_totalKwh2').textContent = totalKwh.toFixed(1) + ' 度 (戶A ' + meterA.toFixed(1) + ' + 戶B ' + meterB.toFixed(1) + ')';
+  document.getElementById('r_pricePerKwh').textContent = pricePerKwh.toFixed(3) + ' 元/度';
+  document.getElementById('r_costA').textContent = costA.toFixed(0) + ' 元';
+  document.getElementById('r_costB').textContent = costB.toFixed(0) + ' 元';
+  document.getElementById('r_total').textContent = (costA + costB).toFixed(0) + ' 元';
+
+  document.getElementById('result').classList.add('show');
+  document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function copyResult() {
+  const data = getCurrentDetail();
+  if (!data) { alert('請先計算或編輯一筆紀錄'); return; }
+  const text = data.join('\n');
+  navigator.clipboard.writeText(text).then(() => alert('✅ 已複製！')).catch(() => alert(text));
+}
+
+function printCurrent() {
+  const data = getCurrentDetail();
+  if (!data) { alert('請先計算或編輯一筆紀錄'); return; }
+  let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>電費明細</title>';
+  html += '<style>body{font-family:sans-serif;padding:24px;max-width:400px;margin:0 auto}';
+  html += 'h1{text-align:center;font-size:20px}table{width:100%;border-collapse:collapse;margin-top:12px}';
+  html += 'td{padding:8px 12px;border-bottom:1px solid #ddd;font-size:15px}';
+  html += 'td+td{text-align:right;font-weight:600}.total td{font-size:18px;color:#e74c3c;border-top:3px double #e74c3c}';
+  html += '@media print{body{padding:10px}}</style></head><body>';
+  html += '<h1>⚡ 電費分攤明細</h1><table>';
+  const labels = ['計費期間','總電費','公電+底度','每戶公電分攤','總用電度數','每度單價','戶A 電費','戶B 電費','應繳總額'];
+  data.forEach((d, i) => {
+    html += '<tr' + (i === data.length - 1 ? ' class="total"' : '') + '><td>' + labels[i] + '</td><td>' + d.split('：')[1] + '</td></tr>';
+  });
+  html += '</table></body></html>';
+  const w = window.open('', '_blank', 'width=500,height=500');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
+}
+
+function getCurrentDetail() {
+  if (editingId) {
+    const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+    const r = records.find(r => r.id === editingId);
+    if (r && r.totalBill > 0) {
+      return [
+        '⚡ 電費分攤計算明細',
+        '計費期間：' + (r.period || '--'),
+        '總電費：' + (r.totalBill || 0).toFixed(0) + ' 元',
+        '公電+底度：' + ((r.publicElec||0)+(r.baseFee||0)).toFixed(0) + ' 元',
+        '每戶公電分攤：' + (r.publicPerHouse || 0).toFixed(1) + ' 元/戶',
+        '總用電度數：' + (r.totalKwh || 0).toFixed(1) + ' 度 (戶A ' + (r.meterA||0).toFixed(1) + ' + 戶B ' + (r.meterB||0).toFixed(1) + ')',
+        '每度單價：' + (r.pricePerKwh || 0).toFixed(3) + ' 元/度',
+        '──────────',
+        '11F-1（戶A）電費：' + (r.costA || 0).toFixed(0) + ' 元',
+        '11F-2（戶B）電費：' + (r.costB || 0).toFixed(0) + ' 元',
+        '──────────',
+        '應繳總額：' + ((r.costA||0)+(r.costB||0)).toFixed(0) + ' 元'
+      ];
+    }
+  }
+  const result = document.getElementById('result');
+  if (result.classList.contains('show')) {
+    return [
+      '⚡ 電費分攤計算明細',
+      '計費期間：' + (document.getElementById('r_period').textContent || '--'),
+      '總電費：' + (document.getElementById('r_totalBill').textContent || '--'),
+      '公電+底度：' + (document.getElementById('r_publicShare').textContent || '--'),
+      '每戶公電分攤：' + (document.getElementById('r_publicPerHouse').textContent || '--'),
+      '總用電度數：' + (document.getElementById('r_totalKwh2').textContent || '--'),
+      '每度單價：' + (document.getElementById('r_pricePerKwh').textContent || '--'),
+      '──────────',
+      '11F-1（戶A）電費：' + (document.getElementById('r_costA').textContent || '--'),
+      '11F-2（戶B）電費：' + (document.getElementById('r_costB').textContent || '--'),
+      '──────────',
+      '應繳總額：' + (document.getElementById('r_total').textContent || '--')
+    ];
+  }
+  return null;
+}
+
+function printCurrent() {
+  const result = document.getElementById('result');
+  if (!result.classList.contains('show')) { alert('請先計算'); return; }
+  const lines = [
+    ['計費期間', document.getElementById('r_period').textContent],
+    ['總電費', document.getElementById('r_totalBill').textContent],
+    ['公電+底度', document.getElementById('r_publicShare').textContent],
+    ['每戶公電分攤', document.getElementById('r_publicPerHouse').textContent],
+    ['總用電度數', document.getElementById('r_totalKwh2').textContent],
+    ['每度單價', document.getElementById('r_pricePerKwh').textContent],
+    ['戶A 電費', document.getElementById('r_costA').textContent],
+    ['戶B 電費', document.getElementById('r_costB').textContent],
+    ['應繳總額', document.getElementById('r_total').textContent]
+  ];
+  let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>電費明細</title>';
+  html += '<style>body{font-family:sans-serif;padding:24px;max-width:400px;margin:0 auto}';
+  html += 'h1{text-align:center;font-size:20px}table{width:100%;border-collapse:collapse;margin-top:12px}';
+  html += 'td{padding:8px 12px;border-bottom:1px solid #ddd;font-size:15px}';
+  html += 'td+td{text-align:right;font-weight:600}.total td{font-size:18px;color:#e74c3c;border-top:3px double #e74c3c}';
+  html += '@media print{body{padding:10px}}</style></head><body>';
+  html += '<h1>⚡ 電費分攤明細</h1><table>';
+  lines.forEach((l, i) => {
+    html += '<tr' + (i === lines.length - 1 ? ' class="total"' : '') + '><td>' + l[0] + '</td><td>' + (l[1] || '--') + '</td></tr>';
+  });
+  html += '</table></body></html>';
+  const w = window.open('', '_blank', 'width=500,height=500');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
+}
+
+function autoMeterNext() {
+  const d = document.getElementById('meterDate').value;
+  if (!d) return;
+  const date = new Date(d);
+  date.setMonth(date.getMonth() + 2);
+  date.setDate(date.getDate() + 1);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  document.getElementById('meterDateNext').value = `${y}-${m}-${day}`;
+}
+
+function autoMeterFromEnd() {
+  const end = document.getElementById('endDate').value;
+  if (!end) return;
+  const date = new Date(end);
+  date.setDate(date.getDate() + 1);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  document.getElementById('meterDate').value = `${y}-${m}-${day}`;
+  autoMeterNext();
+}
+
+function autoBillMonth() {
+  const endDate = document.getElementById('endDate').value;
+  if (!endDate) return;
+  const parts = endDate.split('-');
+  const minguo = parseInt(parts[0]) - 1911;
+  document.getElementById('billMonth').value = minguo + '/' + parts[1];
+}
+
+function updateAvgPrice() {
+  const totalBill = parseFloat(document.getElementById('totalBill').value) || 0;
+  const billingKwh = parseFloat(document.getElementById('billingKwh').value) || 0;
+  const avgPrice = billingKwh > 0 ? totalBill / billingKwh : 0;
+  document.getElementById('avgPricePerKwh').value = avgPrice > 0 ? avgPrice.toFixed(3) : '';
+
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  const hint = document.getElementById('avgPriceHint');
+  if (records.length > 0) {
+    const prevAvg = records[0].avgPricePerKwh || records[0].pricePerKwh || 0;
+    hint.textContent = prevAvg > 0 ? '上期平均電價：' + prevAvg.toFixed(3) + ' 元/度' : '';
+  } else {
+    hint.textContent = '';
+  }
+}
+
+let editingId = null;
+
+function saveRecord() {
+  const totalBill = parseFloat(document.getElementById('totalBill').value) || 0;
+  if (totalBill === 0) { alert('請輸入總電費'); return; }
+
+  const publicElec = parseFloat(document.getElementById('publicElec').value) || 0;
+  const baseFee = parseFloat(document.getElementById('baseFee').value) || 0;
+  const isEdit = !!editingId;
+
+  autoBillMonth();
+  const billMonth = document.getElementById('billMonth').value;
+
+  const data = {
+    period: getPeriodLabel(),
+    startDate: document.getElementById('startDate').value,
+    endDate: document.getElementById('endDate').value,
+    totalBill: totalBill,
+    billMonth: billMonth,
+    totalKwh: parseFloat(document.getElementById('totalKwh').value) || 0,
+    publicElec: publicElec,
+    baseFee: baseFee,
+    publicPerHouse: (publicElec + baseFee) / 2,
+    billingKwh: parseFloat(document.getElementById('billingKwh').value) || 0,
+    avgPricePerKwh: parseFloat(document.getElementById('avgPricePerKwh').value) || 0,
+    meterDate: document.getElementById('meterDate').value,
+    meterDateNext: document.getElementById('meterDateNext').value,
+    meterAprev: parseFloat(document.getElementById('meterAprev').value) || 0,
+    meterAcurr: parseFloat(document.getElementById('meterAcurr').value) || 0,
+    meterBprev: parseFloat(document.getElementById('meterBprev').value) || 0,
+    meterBcurr: parseFloat(document.getElementById('meterBcurr').value) || 0,
+    meterA: parseFloat(document.getElementById('meterA').value) || 0,
+    meterB: parseFloat(document.getElementById('meterB').value) || 0,
+    pricePerKwh: parseFloat(document.getElementById('r_pricePerKwh').textContent) || 0,
+    costA: parseFloat(document.getElementById('r_costA').textContent) || 0,
+    costB: parseFloat(document.getElementById('r_costB').textContent) || 0
+  };
+
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+
+  if (!isEdit && data.billMonth) {
+    const dup = records.find(r => r.billMonth === data.billMonth && String(r.id) !== String(editingId));
+    if (dup) {
+      alert('此帳單月份已有紀錄（期間：' + (dup.period || '--') + '），請修改帳單月份或編輯現有紀錄');
+      return;
+    }
+  }
+
+  if (isEdit) {
+    const idx = records.findIndex(r => r.id === editingId);
+    if (idx >= 0) {
+      records[idx] = { ...records[idx], ...data, savedAt: new Date().toLocaleString('zh-TW') };
+    }
+    editingId = null;
+    document.getElementById('saveBtn').textContent = '💾 儲存本期記錄';
+    document.getElementById('saveBtn').className = 'green';
+  } else {
+    records.unshift({ id: Date.now(), ...data, savedAt: new Date().toLocaleString('zh-TW') });
+  }
+
+  localStorage.setItem('renthouseRecords', JSON.stringify(records));
+  localStorage.removeItem('renthouseDraft');
+  renderHistory();
+  alert(isEdit ? '✅ 已更新！' : '✅ 已儲存！');
+}
+
+let sortField = 'billMonth';
+let sortDir = 'desc';
+
+function sortBy(field) {
+  if (sortField === field) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortField = field;
+    sortDir = 'asc';
+  }
+  renderHistory();
+}
+
+function renderHistory() {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  const selMonth = document.getElementById('historyFilterMonth');
+  const selPeriod = document.getElementById('historyFilterPeriod');
+  const monthVal = selMonth ? selMonth.value : '';
+  const periodVal = selPeriod ? selPeriod.value : '';
+  const tbody = document.getElementById('historyBody');
+  const table = document.getElementById('historyTable');
+  const empty = document.getElementById('emptyMsg');
+
+  const months = [...new Set(records.map(r => r.billMonth).filter(Boolean))].sort().reverse();
+  const periods = [...new Set(records.map(r => r.period).filter(Boolean))].sort().reverse();
+  if (selMonth) {
+    const prevM = selMonth.value;
+    selMonth.innerHTML = '<option value="">全部月份</option>' + months.map(m => '<option value="' + m + '"' + (m === prevM ? ' selected' : '') + '>' + m + '</option>').join('');
+  }
+  if (selPeriod) {
+    const prevP = selPeriod.value;
+    selPeriod.innerHTML = '<option value="">全部期間</option>' + periods.map(p => '<option value="' + p + '"' + (p === prevP ? ' selected' : '') + '>' + p + '</option>').join('');
+  }
+
+  tbody.innerHTML = '';
+  if (records.length === 0) {
+    empty.style.display = 'block';
+    table.style.display = 'none';
+    document.getElementById('totalSummary').style.display = 'none';
+    return;
+  }
+
+  let filtered = records;
+  if (monthVal) filtered = filtered.filter(r => r.billMonth === monthVal);
+  if (periodVal) filtered = filtered.filter(r => r.period === periodVal);
+
+  if (filtered.length === 0) {
+    empty.style.display = 'block';
+    empty.innerHTML = '查無符合紀錄';
+    table.style.display = 'none';
+    document.getElementById('totalSummary').style.display = 'none';
+    return;
+  }
+
+  filtered.sort((a, b) => {
+    const va = a[sortField] !== undefined ? a[sortField] : '';
+    const vb = b[sortField] !== undefined ? b[sortField] : '';
+    const cmp = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'zh');
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  empty.style.display = 'none';
+  table.style.display = '';
+
+  let sumA = 0, sumB = 0;
+  filtered.forEach(r => {
+    sumA += r.costA || 0;
+    sumB += r.costB || 0;
+    const tr = document.createElement('tr');
+    tr.className = 'clickable';
+    tr.innerHTML = `
+      <td>${r.billMonth || '--'}</td>
+      <td>${r.period || '--'}</td>
+      <td>${(r.totalBill || 0).toFixed(0)}</td>
+      <td>${(r.meterA || 0).toFixed(1)}</td>
+      <td>${(r.meterB || 0).toFixed(1)}</td>
+      <td>${(r.pricePerKwh || 0).toFixed(3)}</td>
+      <td>${(r.costA || 0).toFixed(0)}</td>
+      <td>${(r.costB || 0).toFixed(0)}</td>
+      <td class="action-cell"><button class="del-btn" style="color:#4A90D9;" onclick="event.stopPropagation();editRecord(${r.id})">✎</button><button class="del-btn" onclick="event.stopPropagation();deleteRecord(${r.id})">✕</button></td>
+    `;
+    tr.addEventListener('click', () => showDetail(r));
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('totalSummary').innerHTML =
+    '<span>戶A 累計：<b>' + sumA.toFixed(0) + '</b> 元</span>' +
+    '<span>戶B 累計：<b>' + sumB.toFixed(0) + '</b> 元</span>' +
+    '<span>總計：<b>' + (sumA + sumB).toFixed(0) + '</b> 元</span>';
+  document.getElementById('totalSummary').style.display = '';
+
+  document.querySelectorAll('.sort-arrow').forEach(el => { el.textContent = ''; });
+  const arrow = document.getElementById('sa_' + sortField);
+  if (arrow) arrow.textContent = sortDir === 'asc' ? '▲' : '▼';
+}
+
+let viewingRecord = null;
+
+function showDetail(r) {
+  viewingRecord = r;
+  const body = document.getElementById('modalBody');
+  const fmtDate = (d) => d ? d.replace(/-/g, '/') : '--';
+  body.innerHTML = `
+    <div class="modal-row"><span class="modal-label">帳單月份</span><span class="modal-value">${r.billMonth || '--'}</span></div>
+    <div class="modal-row"><span class="modal-label">計費期間</span><span class="modal-value">${r.period || '--'}</span></div>
+    <div class="modal-row"><span class="modal-label">總電費</span><span class="modal-value">${(r.totalBill || 0).toFixed(0)} 元</span></div>
+    <div class="modal-row"><span class="modal-label">公共電費</span><span class="modal-value">${(r.publicElec || 0).toFixed(0)} 元</span></div>
+    <div class="modal-row"><span class="modal-label">基本底度費</span><span class="modal-value">${(r.baseFee || 0).toFixed(0)} 元</span></div>
+    <div class="modal-row"><span class="modal-label">計費度數</span><span class="modal-value">${(r.billingKwh || 0).toFixed(1)} 度</span></div>
+    <div class="modal-row"><span class="modal-label">本次抄表日</span><span class="modal-value">${fmtDate(r.meterDate)}</span></div>
+    <div class="modal-row"><span class="modal-label">下次抄表日</span><span class="modal-value" style="color:#e74c3c;font-weight:700;">${fmtDate(r.meterDateNext)}</span></div>
+    <div class="modal-row"><span class="modal-label">當期平均電價</span><span class="modal-value">${(r.avgPricePerKwh || 0).toFixed(3)} 元/度</span></div>
+    <div style="border-top:1px solid #eee;margin:8px 0;"></div>
+    <div style="font-weight:600;font-size:13px;color:#4A6FA5;">11F-1（戶A）</div>
+    <div class="modal-row"><span class="modal-label">上期分表</span><span class="modal-value">${(r.meterAprev || 0).toFixed(1)}</span></div>
+    <div class="modal-row"><span class="modal-label">本期分表</span><span class="modal-value">${(r.meterAcurr || 0).toFixed(1)}</span></div>
+    <div class="modal-row"><span class="modal-label">用電度數</span><span class="modal-value">${(r.meterA || 0).toFixed(1)} 度</span></div>
+    <div class="modal-row"><span class="modal-label">電費</span><span class="modal-value" style="color:#4A6FA5;font-weight:700;">${(r.costA || 0).toFixed(0)} 元</span></div>
+    <div style="margin:6px 0;"></div>
+    <div style="font-weight:600;font-size:13px;color:#2E7D32;">11F-2（戶B）</div>
+    <div class="modal-row"><span class="modal-label">上期分表</span><span class="modal-value">${(r.meterBprev || 0).toFixed(1)}</span></div>
+    <div class="modal-row"><span class="modal-label">本期分表</span><span class="modal-value">${(r.meterBcurr || 0).toFixed(1)}</span></div>
+    <div class="modal-row"><span class="modal-label">用電度數</span><span class="modal-value">${(r.meterB || 0).toFixed(1)} 度</span></div>
+    <div class="modal-row"><span class="modal-label">電費</span><span class="modal-value" style="color:#2E7D32;font-weight:700;">${(r.costB || 0).toFixed(0)} 元</span></div>
+    <div style="border-top:1px solid #eee;margin:8px 0;"></div>
+    <div class="modal-row"><span class="modal-label">總用電度數</span><span class="modal-value">${(r.totalKwh || 0).toFixed(1)} 度</span></div>
+    <div class="modal-row"><span class="modal-label">每度單價</span><span class="modal-value">${(r.pricePerKwh || 0).toFixed(3)} 元/度</span></div>
+    <div class="modal-row"><span class="modal-label">每戶公電分攤</span><span class="modal-value">${(r.publicPerHouse || 0).toFixed(1)} 元</span></div>
+    <div style="border-top:1px solid #eee;margin:8px 0;"></div>
+    <div class="modal-row total"><span class="modal-label">應繳總額</span><span class="modal-value" style="color:#c62828;font-weight:700;">${((r.costA||0)+(r.costB||0)).toFixed(0)} 元</span></div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function closeModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+
+function copyRecord() {
+  if (!viewingRecord) return;
+  const r = viewingRecord;
+  const text = [
+    '⚡ 電費分攤明細',
+    '帳單月份：' + (r.billMonth || '--'),
+    '計費期間：' + (r.period || '--'),
+    '總電費：' + (r.totalBill || 0).toFixed(0) + ' 元',
+    '公電+底度：' + ((r.publicElec||0)+(r.baseFee||0)).toFixed(0) + ' 元',
+    '每戶公電分攤：' + ((r.publicPerHouse||0)).toFixed(1) + ' 元/戶',
+    '總用電度數：' + (r.totalKwh||0).toFixed(1) + ' 度',
+    '每度單價：' + (r.pricePerKwh||0).toFixed(3) + ' 元/度',
+    '──────────',
+    '11F-1（戶A）電費：' + (r.costA||0).toFixed(0) + ' 元',
+    '11F-2（戶B）電費：' + (r.costB||0).toFixed(0) + ' 元',
+    '應繳總額：' + ((r.costA||0)+(r.costB||0)).toFixed(0) + ' 元'
+  ].join('\n');
+  navigator.clipboard.writeText(text).then(() => alert('✅ 已複製！')).catch(() => alert(text));
+}
+
+function printRecord() {
+  if (!viewingRecord) return;
+  const r = viewingRecord;
+  const fmtDate = (d) => d ? d.replace(/-/g, '/') : '--';
+  const body = `
+    <div class="row"><span class="lbl">帳單月份</span><span class="val">${r.billMonth || '--'}</span></div>
+    <div class="row"><span class="lbl">計費期間</span><span class="val">${r.period || '--'}</span></div>
+    <div class="row"><span class="lbl">總電費</span><span class="val">${(r.totalBill || 0).toFixed(0)} 元</span></div>
+    <div class="row"><span class="lbl">公共電費</span><span class="val">${(r.publicElec || 0).toFixed(0)} 元</span></div>
+    <div class="row"><span class="lbl">基本底度費</span><span class="val">${(r.baseFee || 0).toFixed(0)} 元</span></div>
+    <div class="row"><span class="lbl">計費度數</span><span class="val">${(r.billingKwh || 0).toFixed(1)} 度</span></div>
+    <div class="row"><span class="lbl">本次抄表日</span><span class="val">${fmtDate(r.meterDate)}</span></div>
+    <div class="row"><span class="lbl">下次抄表日</span><span class="val" style="color:#e74c3c;font-weight:700;">${fmtDate(r.meterDateNext)}</span></div>
+    <div class="row"><span class="lbl">當期平均電價</span><span class="val">${(r.avgPricePerKwh || 0).toFixed(3)} 元/度</span></div>
+    <div style="border-top:1px solid #eee;margin:8px 0;"></div>
+    <div class="sec" style="color:#4A6FA5;">11F-1（戶A）</div>
+    <div class="row"><span class="lbl">上期分表</span><span class="val">${(r.meterAprev || 0).toFixed(1)}</span></div>
+    <div class="row"><span class="lbl">本期分表</span><span class="val">${(r.meterAcurr || 0).toFixed(1)}</span></div>
+    <div class="row"><span class="lbl">用電度數</span><span class="val">${(r.meterA || 0).toFixed(1)} 度</span></div>
+    <div class="row"><span class="lbl">電費</span><span class="val" style="color:#4A6FA5;font-weight:700;">${(r.costA || 0).toFixed(0)} 元</span></div>
+    <div style="margin:6px 0;"></div>
+    <div class="sec" style="color:#2E7D32;">11F-2（戶B）</div>
+    <div class="row"><span class="lbl">上期分表</span><span class="val">${(r.meterBprev || 0).toFixed(1)}</span></div>
+    <div class="row"><span class="lbl">本期分表</span><span class="val">${(r.meterBcurr || 0).toFixed(1)}</span></div>
+    <div class="row"><span class="lbl">用電度數</span><span class="val">${(r.meterB || 0).toFixed(1)} 度</span></div>
+    <div class="row"><span class="lbl">電費</span><span class="val" style="color:#2E7D32;font-weight:700;">${(r.costB || 0).toFixed(0)} 元</span></div>
+    <div style="border-top:1px solid #eee;margin:8px 0;"></div>
+    <div class="row"><span class="lbl">總用電度數</span><span class="val">${(r.totalKwh || 0).toFixed(1)} 度</span></div>
+    <div class="row"><span class="lbl">每度單價</span><span class="val">${(r.pricePerKwh || 0).toFixed(3)} 元/度</span></div>
+    <div class="row"><span class="lbl">每戶公電分攤</span><span class="val">${(r.publicPerHouse || 0).toFixed(1)} 元</span></div>
+    <div style="border-top:1px solid #eee;margin:8px 0;"></div>
+    <div class="row total"><span class="lbl">應繳總額</span><span class="val">${((r.costA||0)+(r.costB||0)).toFixed(0)} 元</span></div>
+  `;
+  const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>電費明細</title>'
+    + '<style>body{font-family:sans-serif;padding:24px;max-width:420px;margin:0 auto}'
+    + 'h1{text-align:center;font-size:20px;margin:0 0 12px}.row{display:flex;justify-content:space-between;padding:6px 0;font-size:14px;border-bottom:1px solid #f0f0f0}'
+    + '.lbl{color:#888}.val{font-weight:500;color:#333}.sec{font-weight:600;font-size:13px;color:#4A6FA5;padding:4px 0}'
+    + '.total{border-top:2px solid #e74c3c;margin-top:8px;padding-top:10px;font-size:17px;font-weight:700}.total .val{color:#c62828}'
+    + '@media print{body{padding:16px}}</style></head><body>'
+    + '<h1>⚡ 電費分攤明細</h1>' + body + '</body></html>';
+  const w = window.open('', '_blank', 'width=500,height=700');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
+}
+
+function deleteRecord(id) {
+  if (!confirm('確定刪除？')) return;
+  let records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  records = records.filter(r => r.id !== id);
+  localStorage.setItem('renthouseRecords', JSON.stringify(records));
+  renderHistory();
+}
+
+function editRecord(id) {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  const r = records.find(r => r.id === id);
+  if (!r) return;
+
+  editingId = id;
+
+  document.getElementById('startDate').value = r.startDate || '';
+  document.getElementById('endDate').value = r.endDate || '';
+  document.getElementById('billMonth').value = r.billMonth || '';
+  if (!r.billMonth && r.endDate) autoBillMonth();
+  document.getElementById('totalBill').value = r.totalBill || '';
+  document.getElementById('publicElec').value = r.publicElec || '';
+  document.getElementById('baseFee').value = r.baseFee || '40';
+  document.getElementById('billingKwh').value = r.billingKwh || '';
+  document.getElementById('avgPricePerKwh').value = r.avgPricePerKwh || '';
+  document.getElementById('meterDate').value = r.meterDate || '';
+  document.getElementById('meterDateNext').value = r.meterDateNext || '';
+  document.getElementById('meterAprev').value = r.meterAprev || '';
+  document.getElementById('meterAcurr').value = r.meterAcurr || '';
+  document.getElementById('meterBprev').value = r.meterBprev || '';
+  document.getElementById('meterBcurr').value = r.meterBcurr || '';
+
+  calcBoth();
+  updateAvgPrice();
+
+  if (r.totalBill > 0) {
+    calculate();
+  }
+
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.textContent = '✏️ 更新記錄';
+  saveBtn.className = 'primary';
+
+  document.querySelector('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function navRecord(dir) {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  if (records.length === 0) return;
+  const sorted = [...records].sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+  let idx = -1;
+  if (editingId) {
+    idx = sorted.findIndex(r => r.id === editingId);
+  } else {
+    const cur = document.getElementById('endDate').value;
+    if (cur) idx = sorted.findIndex(r => r.endDate === cur);
+  }
+  const next = idx + dir;
+  if (next < 0 || next >= sorted.length) return;
+  editRecord(sorted[next].id);
+}
+
+function clearHistory() {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  if (records.length === 0) { alert('目前無紀錄'); return; }
+  if (!confirm('⚠️ 共有 ' + records.length + ' 筆紀錄，確定全部清除？此動作無法復原！')) return;
+  if (!confirm('再次確認：真的要刪除所有 ' + records.length + ' 筆紀錄？')) return;
+  localStorage.setItem('renthouseBackup', localStorage.getItem('renthouseRecords'));
+  localStorage.removeItem('renthouseRecords');
+  renderHistory();
+}
+
+function printReport() {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  if (records.length === 0) { alert('無紀錄可列印'); return; }
+  const sorted = [...records].sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+  const fmtDate = d => d ? d.replace(/-/g, '/') : '--';
+  let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>電費分攤報表</title>';
+  html += '<style>body{font-family:monospace;padding:20px;max-width:800px;margin:0 auto}';
+  html += 'h1{text-align:center;font-size:20px}h2{text-align:center;color:#888;font-size:13px;margin-bottom:20px}';
+  html += 'table{width:100%;border-collapse:collapse;font-size:12px}';
+  html += 'th,td{border:1px solid #999;padding:6px 8px;text-align:center}';
+  html += 'th{background:#eee}.next{color:#e74c3c;font-weight:700}';
+  html += '@media print{body{padding:10px}}</style></head><body>';
+  html += '<h1>⚡ 電費分攤報表</h1>';
+  html += '<h2>匯出日期：' + new Date().toLocaleDateString('zh-TW') + '　共 ' + sorted.length + ' 筆</h2>';
+  html += '<table><thead><tr><th>月份</th><th>期間</th><th>總電費</th><th>A度</th><th>B度</th><th>單價</th><th>A電費</th><th>B電費</th><th>抄表日</th><th class="next">下次抄表日</th></tr></thead><tbody>';
+  sorted.forEach(r => {
+    html += '<tr>' +
+      '<td>' + (r.billMonth || '--') + '</td>' +
+      '<td>' + (r.period || '--') + '</td>' +
+      '<td>' + (r.totalBill || 0).toFixed(0) + '</td>' +
+      '<td>' + (r.meterA || 0).toFixed(1) + '</td>' +
+      '<td>' + (r.meterB || 0).toFixed(1) + '</td>' +
+      '<td>' + (r.pricePerKwh || 0).toFixed(3) + '</td>' +
+      '<td>' + (r.costA || 0).toFixed(0) + '</td>' +
+      '<td>' + (r.costB || 0).toFixed(0) + '</td>' +
+      '<td>' + fmtDate(r.meterDate) + '</td>' +
+      '<td class="next">' + fmtDate(r.meterDateNext) + '</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table></body></html>';
+  const w = window.open('', '_blank', 'width=900,height=600');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
+}
+
+function exportReport() {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  if (records.length === 0) { alert('無紀錄可匯出'); return; }
+  const sorted = [...records].sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+  const fmtDate = d => d ? d.replace(/-/g, '/') : '';
+  let csv = '帳單月份,期間,總電費,戶A度數,戶B度數,每度單價,戶A電費,戶B電費,本次抄表日,下次抄表日\n';
+  sorted.forEach(r => {
+    csv += [
+      r.billMonth || '', r.period || '',
+      (r.totalBill || 0).toFixed(0), (r.meterA || 0).toFixed(1), (r.meterB || 0).toFixed(1),
+      (r.pricePerKwh || 0).toFixed(3), (r.costA || 0).toFixed(0), (r.costB || 0).toFixed(0),
+      fmtDate(r.meterDate), '▶ ' + fmtDate(r.meterDateNext)
+    ].join(',') + '\n';
+  });
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '電費紀錄_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function exportBackup() {
+  const data = {
+    renthouseRecords: JSON.parse(localStorage.getItem('renthouseRecords') || '[]'),
+    exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '電費備份_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click(); URL.revokeObjectURL(url);
+  alert('✅ 備份完成！(' + data.renthouseRecords.length + ' 筆)');
+}
+
+function importBackup(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = JSON.parse(ev.target.result);
+      const records = data.renthouseRecords;
+      if (!Array.isArray(records)) throw new Error('格式錯誤');
+      if (!confirm('確定還原 ' + records.length + ' 筆紀錄？將會覆蓋現有資料！')) return;
+      localStorage.setItem('renthouseRecords', JSON.stringify(records));
+      renderHistory();
+      alert('✅ 已還原 ' + records.length + ' 筆紀錄');
+    } catch (err) {
+      alert('❌ 檔案格式錯誤，請選擇正確的備份檔');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function clearForm() {
+  const ids = ['billMonth','startDate','endDate','totalBill','publicElec','billingKwh','meterDate','meterDateNext','meterAprev','meterAcurr','meterBprev','meterBcurr','meterA','meterB','totalKwh','estPublicKwh','avgPricePerKwh'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('baseFee').value = '40';
+  document.getElementById('result').classList.remove('show');
+  document.getElementById('meterAdisplay').textContent = '';
+  document.getElementById('meterBdisplay').textContent = '';
+  document.getElementById('avgPriceHint').textContent = '';
+  editingId = null;
+  document.getElementById('saveBtn').textContent = '💾 儲存本期記錄';
+  document.getElementById('saveBtn').className = 'green';
+  updateCalcBtn();
+  localStorage.removeItem('renthouseDraft');
+}
+
+renderHistory();
+restoreForm();
+updateCalcBtn();
+
+let saveTimer;
+document.querySelectorAll('input').forEach(el => {
+  el.addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(autoSaveForm, 500);
+    updateAvgPrice();
+  });
+});
+
+document.getElementById('batchBody').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('#batchBody')) {
+    e.preventDefault();
+    const inputs = [...e.target.closest('tr').querySelectorAll('input')];
+    const idx = inputs.indexOf(e.target);
+    if (idx >= 0 && idx < inputs.length - 1) {
+      inputs[idx + 1].focus();
+    }
+  }
+});
+
+document.getElementById('mainCard').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+    e.preventDefault();
+    const inputs = [...document.querySelectorAll('#mainCard input:not([readonly])')];
+    const idx = inputs.indexOf(e.target);
+    if (idx >= 0 && idx < inputs.length - 1) {
+      inputs[idx + 1].focus();
+    }
+  }
+});
+
+function autoSaveForm() {
+  const data = {
+    startDate: document.getElementById('startDate').value,
+    endDate: document.getElementById('endDate').value,
+    totalBill: document.getElementById('totalBill').value,
+    billMonth: document.getElementById('billMonth').value,
+    publicElec: document.getElementById('publicElec').value,
+    baseFee: document.getElementById('baseFee').value,
+    billingKwh: document.getElementById('billingKwh').value,
+    avgPricePerKwh: document.getElementById('avgPricePerKwh').value,
+    meterDate: document.getElementById('meterDate').value,
+    meterDateNext: document.getElementById('meterDateNext').value,
+    meterAprev: document.getElementById('meterAprev').value,
+    meterAcurr: document.getElementById('meterAcurr').value,
+    meterBprev: document.getElementById('meterBprev').value,
+    meterBcurr: document.getElementById('meterBcurr').value
+  };
+  localStorage.setItem('renthouseDraft', JSON.stringify(data));
+}
+
+function restoreForm() {
+  const raw = localStorage.getItem('renthouseDraft');
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    document.getElementById('startDate').value = data.startDate || '';
+    document.getElementById('endDate').value = data.endDate || '';
+    document.getElementById('totalBill').value = data.totalBill || '';
+    document.getElementById('billMonth').value = data.billMonth || '';
+    if (!data.billMonth && data.endDate) autoBillMonth();
+    document.getElementById('publicElec').value = data.publicElec || '';
+    document.getElementById('baseFee').value = data.baseFee || '40';
+    document.getElementById('billingKwh').value = data.billingKwh || '';
+    document.getElementById('avgPricePerKwh').value = data.avgPricePerKwh || '';
+    document.getElementById('meterDate').value = data.meterDate || '';
+    document.getElementById('meterDateNext').value = data.meterDateNext || '';
+    document.getElementById('meterAprev').value = data.meterAprev || '';
+    document.getElementById('meterAcurr').value = data.meterAcurr || '';
+    document.getElementById('meterBprev').value = data.meterBprev || '';
+    document.getElementById('meterBcurr').value = data.meterBcurr || '';
+    calcBoth();
+    updateAvgPrice();
+  } catch (e) { /* ignore */ }
+}
+
+let batchRowId = 0;
+
+function addBatchRow() {
+  const tbody = document.getElementById('batchBody');
+  if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+  const id = ++batchRowId;
+  const tr = document.createElement('tr');
+  tr.id = 'batch_' + id;
+  tr.innerHTML =
+    '<td><input type="text" class="batch-input" id="bm_' + id + '" placeholder="月" style="font-size:12px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="date" class="batch-input" id="sd_' + id + '" style="font-size:11px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="date" class="batch-input" id="ed_' + id + '" onchange="batchOnEnd(' + id + ')" style="font-size:11px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="date" class="batch-input" id="md_' + id + '" oninput="batchOnMeter(' + id + ')" style="font-size:11px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="number" class="batch-input" id="ap_' + id + '" step="0.1" inputmode="decimal" oninput="batchCalc(' + id + ')" style="font-size:12px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="number" class="batch-input" id="ac_' + id + '" step="0.1" inputmode="decimal" oninput="batchCalc(' + id + ')" style="font-size:12px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="number" id="au_' + id + '" readonly style="font-size:11px;padding:5px 2px;width:100%;background:#edf1f5;color:#5a6b7c;border:1.5px solid #e0e5ec;border-radius:6px;text-align:center;"></td>' +
+    '<td><input type="number" class="batch-input" id="bp_' + id + '" step="0.1" inputmode="decimal" oninput="batchCalc(' + id + ')" style="font-size:12px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="number" class="batch-input" id="bc_' + id + '" step="0.1" inputmode="decimal" oninput="batchCalc(' + id + ')" style="font-size:12px;padding:5px 2px;width:100%;"></td>' +
+    '<td><input type="number" id="bu_' + id + '" readonly style="font-size:11px;padding:5px 2px;width:100%;background:#edf1f5;color:#5a6b7c;border:1.5px solid #e0e5ec;border-radius:6px;text-align:center;"></td>' +
+    '<td><button class="del-btn" onclick="removeBatchRow(' + id + ')" style="font-size:13px;">✕</button></td>';
+  tbody.appendChild(tr);
+}
+
+function batchCalc(id) {
+  const prevA = parseFloat(document.getElementById('ap_' + id)?.value) || 0;
+  const currA = parseFloat(document.getElementById('ac_' + id)?.value) || 0;
+  const prevB = parseFloat(document.getElementById('bp_' + id)?.value) || 0;
+  const currB = parseFloat(document.getElementById('bc_' + id)?.value) || 0;
+  document.getElementById('au_' + id).value = currA >= prevA ? (currA - prevA).toFixed(1) : '';
+  document.getElementById('bu_' + id).value = currB >= prevB ? (currB - prevB).toFixed(1) : '';
+}
+
+function batchOnEnd(id) {
+  const endDate = document.getElementById('ed_' + id)?.value;
+  if (!endDate) return;
+  const parts = endDate.split('-');
+  const bm = (parseInt(parts[0]) - 1911) + '/' + parts[1];
+  document.getElementById('bm_' + id).value = bm;
+  if (!document.getElementById('md_' + id)?.value) {
+    const d = new Date(endDate);
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    document.getElementById('md_' + id).value = `${y}-${m}-${day}`;
+  }
+}
+
+function batchOnMeter(id) {
+  const meterDate = document.getElementById('md_' + id)?.value;
+  if (!meterDate) return;
+
+  const md = new Date(meterDate);
+  md.setDate(md.getDate() - 1);
+  const endDate = `${md.getFullYear()}-${String(md.getMonth()+1).padStart(2,'0')}-${String(md.getDate()).padStart(2,'0')}`;
+  document.getElementById('ed_' + id).value = endDate;
+
+  const bm = (parseInt(endDate.split('-')[0]) - 1911) + '/' + endDate.split('-')[1];
+  document.getElementById('bm_' + id).value = bm;
+
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  let best = null, bestDiff = Infinity;
+  const targetDate = new Date(meterDate);
+  for (const r of records) {
+    if (!r.meterDate) continue;
+    const diff = targetDate - new Date(r.meterDate);
+    if (diff > 0 && diff < bestDiff && diff < 75 * 86400000) {
+      bestDiff = diff;
+      best = r;
+    }
+  }
+
+  if (best && best.meterDate) {
+    document.getElementById('sd_' + id).value = best.meterDate;
+    if (!document.getElementById('ap_' + id)?.value && best.meterAcurr) {
+      document.getElementById('ap_' + id).value = best.meterAcurr;
+    }
+    if (!document.getElementById('bp_' + id)?.value && best.meterBcurr) {
+      document.getElementById('bp_' + id).value = best.meterBcurr;
+    }
+    batchCalc(id);
+  } else {
+    const start = new Date(meterDate);
+    start.setMonth(start.getMonth() - 2);
+    start.setDate(start.getDate() - 1);
+    document.getElementById('sd_' + id).value = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`;
+  }
+}
+
+function removeBatchRow(id) {
+  const tr = document.getElementById('batch_' + id);
+  if (tr) tr.remove();
+  const tbody = document.getElementById('batchBody');
+  if (!tbody.querySelector('tr')) {
+    tbody.innerHTML = '<tr><td colspan="11" style="color:#b0b9c4;padding:20px;">點「＋ 新增列」開始輸入</td></tr>';
+  }
+}
+
+function clearBatch() {
+  if (!confirm('確定清除所有批次輸入？')) return;
+  clearBatchTable();
+}
+
+function clearBatchTable() {
+  document.getElementById('batchBody').innerHTML = '<tr><td colspan="11" style="color:#b0b9c4;padding:20px;">點「＋ 新增列」開始輸入</td></tr>';
+}
+
+function saveBatch() {
+  const tbody = document.getElementById('batchBody');
+  const rows = tbody.querySelectorAll('tr[id^="batch_"]');
+  if (rows.length === 0) { alert('沒有資料可儲存'); return; }
+
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  let saved = 0;
+  let dupMonths = [];
+
+  rows.forEach(tr => {
+    const id = tr.id.replace('batch_', '');
+    const billMonth = document.getElementById('bm_' + id)?.value || '';
+    const startDate = document.getElementById('sd_' + id)?.value || '';
+    const endDate = document.getElementById('ed_' + id)?.value || '';
+    const meterDate = document.getElementById('md_' + id)?.value || '';
+    const meterAprev = parseFloat(document.getElementById('ap_' + id)?.value) || 0;
+    const meterAcurr = parseFloat(document.getElementById('ac_' + id)?.value) || 0;
+    const meterBprev = parseFloat(document.getElementById('bp_' + id)?.value) || 0;
+    const meterBcurr = parseFloat(document.getElementById('bc_' + id)?.value) || 0;
+
+    const meterA = meterAcurr >= meterAprev ? meterAcurr - meterAprev : 0;
+    const meterB = meterBcurr >= meterBprev ? meterBcurr - meterBprev : 0;
+    const totalKwh = meterA + meterB;
+    if (totalKwh <= 0) return;
+
+    if (billMonth && records.find(r => r.billMonth === billMonth)) {
+      dupMonths.push(billMonth);
+      return;
+    }
+
+    const period = startDate && endDate ? (() => {
+      const fmt = d => { const p = d.split('-'); return (parseInt(p[0]) - 1911) + '/' + p[1] + '/' + p[2]; };
+      return fmt(startDate) + '~' + fmt(endDate);
+    })() : '--';
+
+    const meterDateNext = meterDate ? (() => {
+      const d = new Date(meterDate);
+      d.setMonth(d.getMonth() + 2);
+      d.setDate(d.getDate() + 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    })() : '';
+
+    records.unshift({
+      id: Date.now() + saved,
+      period, startDate, endDate, billMonth, meterDate, meterDateNext,
+      totalBill: 0, totalKwh, publicElec: 0, baseFee: 40, publicPerHouse: 20,
+      billingKwh: 0, avgPricePerKwh: 0,
+      meterAprev, meterAcurr, meterBprev, meterBcurr, meterA, meterB,
+      pricePerKwh: 0, costA: 0, costB: 0,
+      savedAt: new Date().toLocaleString('zh-TW')
+    });
+    saved++;
+  });
+
+  if (saved === 0 && dupMonths.length === 0) { alert('沒有有效資料（可能無用電度數）'); return; }
+  localStorage.setItem('renthouseRecords', JSON.stringify(records));
+  clearBatchTable();
+  renderHistory();
+  let msg = '✅ 已儲存 ' + saved + ' 筆記錄';
+  if (dupMonths.length > 0) msg += '\n⚠️ 跳過 ' + dupMonths.length + ' 筆重複月份：' + dupMonths.join('、');
+  alert(msg);
+}
+
+function toggleBatch() {
+  const content = document.getElementById('batchContent');
+  const btn = document.getElementById('batchToggleBtn');
+  if (content.style.display === 'none') {
+    content.style.display = '';
+    btn.textContent = '− 收合';
+  } else {
+    content.style.display = 'none';
+    btn.textContent = '+ 展開';
+  }
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js');
+  });
+}
+</script>
+</body>
+</html>
