@@ -187,6 +187,8 @@
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <div class="section-title" style="margin:0;border:none;padding-left:0;">📋 台電帳單</div>
     <button class="small" onclick="clearForm()" style="background:#4A90D9;color:#fff;margin:0;">＋ 新增</button>
+    <button class="small" onclick="document.getElementById('pdfInput').click()" style="background:#e67e22;color:#fff;margin:0;">📄 匯入PDF</button>
+    <input type="file" id="pdfInput" accept=".pdf" onchange="importPDF(event)" style="display:none;">
   </div>
   <div class="row">
     <div class="col"><label>帳單月份</label><input type="text" id="billMonth" placeholder="" readonly></div>
@@ -356,6 +358,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 function autoEndDate() {
   const start = document.getElementById('startDate').value;
@@ -595,6 +598,107 @@ function printCurrent() {
   w.document.write(html);
   w.document.close();
   setTimeout(() => w.print(), 300);
+}
+
+function importPDF(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const reader = new FileReader();
+  reader.onload = async function() {
+    try {
+      const pdf = await pdfjsLib.getDocument({ data: reader.result }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        fullText += content.items.map(it => it.str).join(' ') + '\n';
+      }
+      parseBillText(fullText);
+    } catch (err) {
+      alert('PDF 解析失敗：' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+}
+
+function parseBillText(text) {
+  let found = 0;
+  const t = text.replace(/\s+/g, ' ');
+
+  // 計費期間: look for date range pattern 民國年/月/日~民國年/月/日
+  const periodMatch = t.match(/(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*[~～]\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+  if (periodMatch) {
+    const toAD = (y) => parseInt(y) < 200 ? parseInt(y) + 1911 : y;
+    const s = toAD(periodMatch[1]) + '-' + periodMatch[2].padStart(2,'0') + '-' + periodMatch[3].padStart(2,'0');
+    const e = toAD(periodMatch[4]) + '-' + periodMatch[5].padStart(2,'0') + '-' + periodMatch[6].padStart(2,'0');
+    document.getElementById('startDate').value = s;
+    document.getElementById('endDate').value = e;
+    autoBillMonth();
+    autoMeterFromEnd();
+    found++;
+  }
+
+  // 本次抄表日
+  const mdMatch = t.match(/本次抄表日[：:\s]*(\d+)\/(\d+)\/(\d+)/);
+  if (mdMatch) {
+    const ad = parseInt(mdMatch[1]) < 200 ? parseInt(mdMatch[1]) + 1911 : mdMatch[1];
+    document.getElementById('meterDate').value = ad + '-' + mdMatch[2].padStart(2,'0') + '-' + mdMatch[3].padStart(2,'0');
+    autoMeterNext();
+    found++;
+  }
+
+  // 下次抄表日
+  const ndMatch = t.match(/下次抄表日[：:\s]*(\d+)\/(\d+)\/(\d+)/);
+  if (ndMatch) {
+    const ad = parseInt(ndMatch[1]) < 200 ? parseInt(ndMatch[1]) + 1911 : ndMatch[1];
+    document.getElementById('meterDateNext').value = ad + '-' + ndMatch[2].padStart(2,'0') + '-' + ndMatch[3].padStart(2,'0');
+  }
+
+  // 應繳總金額
+  let totalMatch = t.match(/應?繳?總?金額[：:\s]*([\d,]+\.?\d*)\s*元/);
+  if (!totalMatch) totalMatch = t.match(/總計[：:\s]*([\d,]+\.?\d*)\s*元/);
+  if (!totalMatch) totalMatch = t.match(/合計[：:\s]*([\d,]+\.?\d*)\s*元/);
+  if (totalMatch) {
+    document.getElementById('totalBill').value = totalMatch[1].replace(/,/g, '');
+    found++;
+  }
+
+  // 公共電費
+  const pubMatch = t.match(/(?:公共|分攤公共)電費[：:\s]*([\d,]+\.?\d*)\s*元/);
+  if (pubMatch) {
+    document.getElementById('publicElec').value = pubMatch[1].replace(/,/g, '');
+    found++;
+  }
+
+  // 底度費
+  const baseMatch = t.match(/(?:底度|基本).*?[費金][：:\s]*([\d,]+\.?\d*)\s*元/);
+  if (baseMatch) {
+    document.getElementById('baseFee').value = baseMatch[1].replace(/,/g, '');
+    found++;
+  }
+
+  // 計費度數
+  const kwhMatch = t.match(/(?:計費|用電)度數[：:\s]*([\d,]+\.?\d*)\s*度/);
+  if (kwhMatch) {
+    document.getElementById('billingKwh').value = kwhMatch[1].replace(/,/g, '');
+    found++;
+  }
+
+  // 每度單價
+  const priceMatch = t.match(/每度.*?[價均][：:\s]*([\d.]+)\s*元/);
+  if (priceMatch) {
+    document.getElementById('avgPricePerKwh').value = parseFloat(priceMatch[1]).toFixed(3);
+    found++;
+  }
+
+  if (found > 0) {
+    updateAvgPrice();
+    document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else {
+    alert('未辨識到台電帳單資料，請手動輸入或確認 PDF 內容。\n\n辨識到的文字片段：\n' + t.slice(0, 300) + '...');
+  }
 }
 
 function autoMeterNext() {
