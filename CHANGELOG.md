@@ -57,3 +57,12 @@
 - 「暫存帳單」按鈕：無分電表時儲存帳單資料，有分電表時顯示「計算」
 - 清除按鈕只清主卡片，不影響批次輸入區
 - 全頁面自適應，表格不產生橫向捲軸
+
+## 2026-05-22 部署
+
+### GitHub Pages 上線
+- 建立 Git Repo + GitHub Pages 部署
+- 網址：`https://smartbsp.github.io/renthouse`
+- 手機/電腦皆可開啟，加入主畫面即為 PWA App
+- 修改後 `git add . && git commit && git push` 即自動更新
+- 備份/還原功能（💾 JSON 下載 / 📥 上傳覆蓋）
