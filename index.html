@@ -1339,6 +1339,7 @@ function editRecord(id) {
 
   calcBoth();
   updateAvgPrice();
+  if (meterMode === 'list') syncMeterToList();
 
   if (r.totalBill > 0) {
     calculate();
