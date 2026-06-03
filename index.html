@@ -1318,6 +1318,7 @@ function importBackup(e) {
       if (!Array.isArray(records)) throw new Error('格式錯誤');
       if (!confirm('確定還原 ' + records.length + ' 筆紀錄？將會覆蓋現有資料！')) return;
       localStorage.setItem('renthouseRecords', JSON.stringify(records));
+      if (isNAS) dbSave(records);
       renderHistory();
       alert('✅ 已還原 ' + records.length + ' 筆紀錄');
     } catch (err) {
