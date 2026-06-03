@@ -303,8 +303,7 @@
       </tbody>
     </table>
     <div style="font-size:12px;color:#64748b;margin-top:8px;font-weight:600;">📋 歷史總覽</div>
-    <div style="overflow-x:auto;max-height:300px;">
-      <table style="table-layout:fixed;font-size:11px;min-width:500px;" id="historyOverview">
+      <table style="table-layout:fixed;font-size:10px;width:100%;" id="historyOverview">
         <thead><tr>
           <th>月份</th><th>A上期</th><th>A本期</th><th>A用電</th>
           <th>B上期</th><th>B本期</th><th>B用電</th>
@@ -312,7 +311,6 @@
         </tr></thead>
         <tbody><tr><td colspan="9" style="color:#cbd5e1;">尚無紀錄</td></tr></tbody>
       </table>
-    </div>
   </div>
   <div class="row">
     <div class="col"><label>總用電度數</label><input type="number" id="totalKwh" step="0.1" readonly></div>
@@ -1100,7 +1098,7 @@ function renderOverview() {
   tbody.innerHTML = sorted.map(r => {
     const total = (r.meterA || 0) + (r.meterB || 0);
     const diff = (r.billingKwh || 0) - total;
-    return '<tr style="cursor:pointer" onclick="editRecord(' + r.id + ');document.getElementById(\'meterModeBtn\').click();">' +
+    return '<tr style="cursor:pointer;font-size:10px;" onclick="editRecord(' + r.id + ');">' +
       '<td>' + (r.billMonth || '--') + '</td>' +
       '<td>' + (r.meterAprev || 0).toFixed(1) + '</td><td>' + (r.meterAcurr || 0).toFixed(1) + '</td>' +
       '<td style="font-weight:600;">' + (r.meterA || 0).toFixed(1) + '</td>' +
