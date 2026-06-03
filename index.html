@@ -365,6 +365,43 @@
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 </script>
 <script>
+const isNAS = location.hostname.includes('lohastime.com.tw');
+const API = isNAS ? 'https://lohastime.com.tw/renthouse/api.php' : '';
+
+function dbLoad() {
+  return new Promise(resolve => {
+    if (API) {
+      fetch(API + '?action=list').then(r => r.json()).then(data => {
+        localStorage.setItem('renthouseRecords', JSON.stringify(data));
+        resolve(data);
+      }).catch(() => resolve(JSON.parse(localStorage.getItem('renthouseRecords') || '[]')));
+    } else {
+      resolve(JSON.parse(localStorage.getItem('renthouseRecords') || '[]'));
+    }
+  });
+}
+
+function dbSave(records) {
+  localStorage.setItem('renthouseRecords', JSON.stringify(records));
+  if (API) {
+    fetch(API + '?action=save', { method: 'POST', body: JSON.stringify({ records }) })
+      .catch(() => {});
+  }
+}
+
+function dbDelete(id) {
+  if (API) {
+    fetch(API + '?action=delete', { method: 'POST', body: JSON.stringify({ id }) })
+      .catch(() => {});
+  }
+}
+
+function dbClear() {
+  if (API) {
+    fetch(API + '?action=clear', { method: 'POST' }).catch(() => {});
+  }
+}
+
 function autoEndDate() {
   const start = document.getElementById('startDate').value;
   if (!start) return;
@@ -896,6 +933,7 @@ function saveRecord() {
   }
 
   localStorage.setItem('renthouseRecords', JSON.stringify(records));
+  if (isNAS) dbSave(records);
   localStorage.removeItem('renthouseDraft');
   renderHistory();
   autoBackupToFile();
@@ -1112,6 +1150,7 @@ function deleteRecord(id) {
   let records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   records = records.filter(r => r.id !== id);
   localStorage.setItem('renthouseRecords', JSON.stringify(records));
+  if (isNAS) { dbDelete(id); dbSave(records); }
   renderHistory();
 }
 
@@ -1175,6 +1214,7 @@ function clearHistory() {
   if (!confirm('再次確認：真的要刪除所有 ' + records.length + ' 筆紀錄？')) return;
   localStorage.setItem('renthouseBackup', localStorage.getItem('renthouseRecords'));
   localStorage.removeItem('renthouseRecords');
+  if (isNAS) dbClear();
   renderHistory();
 }
 
@@ -1299,6 +1339,9 @@ function clearForm() {
 renderHistory();
 restoreForm();
 updateCalcBtn();
+if (isNAS) {
+  dbLoad().then(() => renderHistory());
+}
 
 let saveTimer;
 document.querySelectorAll('input').forEach(el => {
@@ -1542,6 +1585,7 @@ function saveBatch() {
 
   if (saved === 0 && dupMonths.length === 0) { alert('沒有有效資料（可能無用電度數）'); return; }
   localStorage.setItem('renthouseRecords', JSON.stringify(records));
+  if (isNAS) dbSave(records);
   clearBatchTable();
   renderHistory();
   autoBackupToFile();
