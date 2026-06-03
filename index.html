@@ -188,6 +188,7 @@
     <div class="section-title" style="margin:0;border:none;padding-left:0;">📋 台電帳單</div>
     <button class="small" onclick="clearForm()" style="background:#4A90D9;color:#fff;margin:0;">＋ 新增</button>
     <button class="small" onclick="document.getElementById('pdfInput').click()" style="background:#e67e22;color:#fff;margin:0;">📄 匯入PDF</button>
+    <button class="small" onclick="pasteBillText()" style="background:#8e44ad;color:#fff;margin:0;">📋 貼上</button>
     <input type="file" id="pdfInput" accept=".pdf" onchange="importPDF(event)" style="display:none;">
   </div>
   <div class="row">
@@ -603,6 +604,20 @@ function printCurrent() {
   setTimeout(() => w.print(), 300);
 }
 
+function pasteBillText() {
+  navigator.clipboard.readText().then(text => {
+    if (text && text.length > 10) {
+      parseBillText(text);
+    } else {
+      const t = prompt('請貼上電費明細文字內容：');
+      if (t) parseBillText(t);
+    }
+  }).catch(() => {
+    const t = prompt('請貼上電費明細文字內容：');
+    if (t) parseBillText(t);
+  });
+}
+
 function importPDF(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -610,7 +625,7 @@ function importPDF(e) {
   const reader = new FileReader();
   reader.onload = async function() {
     try {
-      const pdf = await pdfjsLib.getDocument({ data: reader.result }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: reader.result, disableWorker: true }).promise;
       let fullText = '';
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
