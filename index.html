@@ -686,42 +686,34 @@ function parseBillText(text) {
   let found = 0;
   let t = text.replace(/\s+/g, ' ');
 
-  // === 台電帳單格式 ===
-  // 台灣電力公司 115年05月
-  let m = t.match(/台灣電力公司\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月/);
+  // === 台電帳單格式（含 OCR 容錯） ===
+  // 台灣電力公司 115年05月（容忍 OCR 加空格）
+  m = t.match(/台\s*灣\s*電\s*力\s*公\s*司\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月/);
+  if (!m) m = t.match(/(?:電力|電費).*?(\d{2,3})\s*[年\/]\s*(\d{1,2})\s*[月]?/);
   if (m) {
-    const bm = m[1] + '/' + m[2].padStart(2,'0');
-    document.getElementById('billMonth').value = bm;
+    document.getElementById('billMonth').value = m[1] + '/' + m[2].padStart(2,'0');
     found++;
   }
 
   // 應繳總金額 or 應繳金額 or OCR 遮罩誤讀
   m = t.match(/應繳總金額\s*([\d,]+\.?\d*)\s*元/) || t.match(/應繳金額\s*([\d,]+\.?\d*)\s*元/);
   if (!m) m = t.match(/\*{2,}\s*([\d,]+\.?\d*)\s*元/);
+  if (!m) m = t.match(/[應纓].*?[金全].*?額\s*([\d,]+\.?\d*)\s*元/);
   if (m) { document.getElementById('totalBill').value = m[1].replace(/,/g,''); found++; }
 
-  // 繳費期限 → 可作為下次抄表日參考
-  m = t.match(/繳費期限\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
-  if (m) {
-    const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
-    const due = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
-    if (!document.getElementById('meterDateNext').value) {
-      document.getElementById('meterDateNext').value = due;
-    }
-  }
-
-  // 計費期間 (ROC year)
-  m = t.match(/計費期間\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*[~～]\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+  // 計費期間 (容忍 OCR 錯誤)
+  m = t.match(/計費期間\s*(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*[~～]\s*(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
+  if (!m) m = t.match(/(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*[~～]\s*(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
   if (m) {
     const toAD = (y) => parseInt(y) < 200 ? parseInt(y) + 1911 : y;
     document.getElementById('startDate').value = toAD(m[1]) + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
     document.getElementById('endDate').value = toAD(m[4]) + '-' + m[5].padStart(2,'0') + '-' + m[6].padStart(2,'0');
-    autoMeterFromEnd();
-    found++;
+    autoMeterFromEnd(); found++;
   }
 
-  // 本次抄表日
-  m = t.match(/本?次?抄表[日⽇]\s*(\d{2,4})\/(\d{1,2})\/(\d{1,2})/);
+  // 本次抄表日（容忍空格）
+  m = t.match(/本?次?\s*抄\s*表\s*[日⽇]\s*(\d{2,4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
+  if (!m) m = t.match(/(?:抄表|讀表)\s*[日⽇]?[期]?\s*[：:]*\s*(\d{2,4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
   if (m) {
     const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
     document.getElementById('meterDate').value = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
@@ -729,28 +721,25 @@ function parseBillText(text) {
   }
 
   // 下次抄表日
-  m = t.match(/下次?抄表[日⽇]\s*(\d{2,4})\/(\d{1,2})\/(\d{1,2})/);
+  m = t.match(/下\s*次?\s*抄\s*表\s*[日⽇]\s*(\d{2,4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
   if (m) {
     const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
     document.getElementById('meterDateNext').value = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
   }
 
-  // 經常用電度數 or 用電度數 or 計費度數
-  m = t.match(/(?:經常|計費|用電)\s*度數\s*([\d,]+\.?\d*)\s*度/);
-  if (!m) m = t.match(/度數\s*([\d,]+\.?\d*)\s*度/);
+  // 經常用電度數 or 計費度數（容忍空格和小錯誤）
+  m = t.match(/(?:經|計|用)\s*[常費電]?\s*度\s*數\s*([\d,]+\.?\d*)\s*度/);
+  if (!m) m = t.match(/度\s*數\s*([\d,]+\.?\d*)\s*度/);
   if (m) { document.getElementById('billingKwh').value = m[1].replace(/,/g,''); found++; }
 
   // 底度費 or 基本電費
-  m = t.match(/(?:底度費|基本電費)\s*([\d,]+\.?\d*)\s*元/);
+  m = t.match(/(?:底\s*度\s*費|基\s*本\s*[電費])\s*([\d,]+\.?\d*)\s*元/);
+  if (!m) m = t.match(/[底基].*?[費金]\s*([\d,]+\.?\d*)\s*元/);
   if (m) { document.getElementById('baseFee').value = m[1].replace(/,/g,''); found++; }
 
   // 公共電費
-  m = t.match(/公共電費\s*([\d,]+\.?\d*)\s*元/);
+  m = t.match(/公\s*共\s*[電分]\s*[費攤]?\s*([\d,]+\.?\d*)\s*元/);
   if (m) { document.getElementById('publicElec').value = m[1].replace(/,/g,''); found++; }
-
-  // 每度平均單價
-  m = t.match(/每度平均單價\s*([\d.]+)\s*元/);
-  if (m) { document.getElementById('avgPricePerKwh').value = parseFloat(m[1]).toFixed(3); found++; }
 
   // === 我們的 App 明細格式 (fallback) ===
   if (found === 0) {
