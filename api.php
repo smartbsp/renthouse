@@ -35,8 +35,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'list') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $input = json_decode(file_get_contents('php://input'), true);
-  if (!$input) { http_response_code(400); echo '{"error":"Invalid JSON"}'; exit; }
+  $raw = file_get_contents('php://input');
+  $input = $raw ? json_decode($raw, true) : [];
+  if ($input === null) { http_response_code(400); echo '{"error":"Invalid JSON"}'; exit; }
+
+  if ($action === 'clear') {
+    saveDB([]);
+    echo json_encode(['ok' => true]);
+    exit;
+  }
+
+  if (!$input || empty($input)) { http_response_code(400); echo '{"error":"Invalid JSON"}'; exit; }
 
   if ($action === 'save') {
     $records = loadDB();
