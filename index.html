@@ -698,10 +698,9 @@ function parseBillText(text) {
   if (found > 0) {
     calcBoth();
     updateAvgPrice();
-    document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    alert('✅ 已辨識 ' + found + ' 個欄位');
   } else {
-    console.log('PDF parse failed, text:', t.slice(0, 500));
-    alert('未辨識到資料。\n若為圖片型 PDF，請改用 📋 貼上 功能\n（從 PDF 複製文字後點 📋 貼上）\n\n文字片段：\n' + t.slice(0, 200) + '...');
+    alert('未辨識到資料。請確認複製的內容包含「總電費」「計費期間」等關鍵字。\n\n複製到的文字：\n' + t.slice(0, 300));
   }
 }
 
