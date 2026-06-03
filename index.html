@@ -1340,12 +1340,18 @@ function clearForm() {
   localStorage.removeItem('renthouseDraft');
 }
 
-renderHistory();
-restoreForm();
-updateCalcBtn();
-if (isNAS) {
-  dbLoad().then(() => renderHistory());
+async function initApp() {
+  if (isNAS) {
+    try {
+      const data = await dbLoad();
+      localStorage.setItem('renthouseRecords', JSON.stringify(data));
+    } catch(e) {}
+  }
+  renderHistory();
+  restoreForm();
+  updateCalcBtn();
 }
+initApp();
 
 let saveTimer;
 document.querySelectorAll('input').forEach(el => {
