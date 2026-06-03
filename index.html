@@ -359,9 +359,9 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js'"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 </script>
 <script>
 function autoEndDate() {
@@ -633,8 +633,9 @@ function importPDF(e) {
         fullText += content.items.map(it => it.str).join(' ') + '\n';
       }
       parseBillText(fullText);
+      console.log('PDF text:', fullText.slice(0, 500));
     } catch (err) {
-      alert('PDF 解析失敗：' + err.message);
+      alert('PDF 解析失敗：' + err.message + '\n\n可能是圖片型 PDF，請用 📋 貼上 或手動輸入');
     }
   };
   reader.readAsArrayBuffer(file);
@@ -699,7 +700,8 @@ function parseBillText(text) {
     updateAvgPrice();
     document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else {
-    alert('未辨識到資料，可能是不同格式的帳單。\n\n辨識到的文字片段：\n' + t.slice(0, 300) + '...');
+    console.log('PDF parse failed, text:', t.slice(0, 500));
+    alert('未辨識到資料。\n若為圖片型 PDF，請改用 📋 貼上 功能\n（從 PDF 複製文字後點 📋 貼上）\n\n文字片段：\n' + t.slice(0, 200) + '...');
   }
 }
 
