@@ -302,6 +302,17 @@
           <td style="color:#c2410c;font-weight:700;" id="ml_kwhDiff">0</td></tr>
       </tbody>
     </table>
+    <div style="font-size:12px;color:#64748b;margin-top:8px;font-weight:600;">📋 歷史總覽</div>
+    <div style="overflow-x:auto;max-height:300px;">
+      <table style="table-layout:fixed;font-size:11px;min-width:500px;" id="historyOverview">
+        <thead><tr>
+          <th>月份</th><th>A上期</th><th>A本期</th><th>A用電</th>
+          <th>B上期</th><th>B本期</th><th>B用電</th>
+          <th style="background:#eef2ff;">合計</th><th style="background:#fff7ed;">差額</th>
+        </tr></thead>
+        <tbody><tr><td colspan="9" style="color:#cbd5e1;">尚無紀錄</td></tr></tbody>
+      </table>
+    </div>
   </div>
   <div class="row">
     <div class="col"><label>總用電度數</label><input type="number" id="totalKwh" step="0.1" readonly></div>
@@ -528,6 +539,7 @@ function toggleMeterMode() {
     document.getElementById('meterList').style.display = 'none';
   }
   calcBoth();
+  renderOverview();
 }
 
 function syncMeterToList() {
@@ -1076,6 +1088,30 @@ function sortBy(field) {
   renderHistory();
 }
 
+function renderOverview() {
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  const tbody = document.querySelector('#historyOverview tbody');
+  if (!tbody) return;
+  if (records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="color:#cbd5e1;padding:12px;">尚無紀錄</td></tr>';
+    return;
+  }
+  const sorted = [...records].sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+  tbody.innerHTML = sorted.map(r => {
+    const total = (r.meterA || 0) + (r.meterB || 0);
+    const diff = (r.billingKwh || 0) - total;
+    return '<tr style="cursor:pointer" onclick="editRecord(' + r.id + ');document.getElementById(\'meterModeBtn\').click();">' +
+      '<td>' + (r.billMonth || '--') + '</td>' +
+      '<td>' + (r.meterAprev || 0).toFixed(1) + '</td><td>' + (r.meterAcurr || 0).toFixed(1) + '</td>' +
+      '<td style="font-weight:600;">' + (r.meterA || 0).toFixed(1) + '</td>' +
+      '<td>' + (r.meterBprev || 0).toFixed(1) + '</td><td>' + (r.meterBcurr || 0).toFixed(1) + '</td>' +
+      '<td style="font-weight:600;">' + (r.meterB || 0).toFixed(1) + '</td>' +
+      '<td style="background:#f0fdf4;font-weight:700;">' + total.toFixed(1) + '</td>' +
+      '<td style="background:#fff7ed;font-weight:600;color:' + (diff > 0 ? '#c2410c' : '#166534') + ';">' + diff.toFixed(1) + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
 function renderHistory() {
   const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   const selMonth = document.getElementById('historyFilterMonth');
@@ -1157,6 +1193,7 @@ function renderHistory() {
   document.querySelectorAll('.sort-arrow').forEach(el => { el.textContent = ''; });
   const arrow = document.getElementById('sa_' + sortField);
   if (arrow) arrow.textContent = sortDir === 'asc' ? '▲' : '▼';
+  renderOverview();
 }
 
 let viewingRecord = null;
@@ -1476,6 +1513,7 @@ async function initApp() {
   renderHistory();
   restoreForm();
   updateCalcBtn();
+  renderOverview();
 }
 initApp();
 
