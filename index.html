@@ -898,6 +898,7 @@ function saveRecord() {
   localStorage.setItem('renthouseRecords', JSON.stringify(records));
   localStorage.removeItem('renthouseDraft');
   renderHistory();
+  autoBackupToFile();
   alert(isEdit ? '✅ 已更新！' : '✅ 已儲存！');
 }
 
@@ -1234,6 +1235,18 @@ function exportReport() {
   a.click(); URL.revokeObjectURL(url);
 }
 
+function autoBackupToFile() {
+  const data = {
+    renthouseRecords: JSON.parse(localStorage.getItem('renthouseRecords') || '[]'),
+    exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '電費備份_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click(); URL.revokeObjectURL(url);
+}
+
 function exportBackup() {
   const data = {
     renthouseRecords: JSON.parse(localStorage.getItem('renthouseRecords') || '[]'),
@@ -1531,6 +1544,7 @@ function saveBatch() {
   localStorage.setItem('renthouseRecords', JSON.stringify(records));
   clearBatchTable();
   renderHistory();
+  autoBackupToFile();
   let msg = '✅ 已儲存 ' + saved + ' 筆記錄';
   if (dupMonths.length > 0) msg += '\n⚠️ 跳過 ' + dupMonths.length + ' 筆重複月份：' + dupMonths.join('、');
   alert(msg);
