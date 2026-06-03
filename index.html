@@ -684,56 +684,111 @@ async function ocrImage(imgData, btn, origText) {
 
 function parseBillText(text) {
   let found = 0;
-  const t = text.replace(/\s+/g, ' ');
+  let t = text.replace(/\s+/g, ' ');
 
-  // 計費期間: 115/03/16~115/05/14
-  const periodMatch = t.match(/(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*[~～]\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
-  if (periodMatch) {
+  // === 台電帳單格式 ===
+  // 台灣電力公司 115年05月
+  let m = t.match(/台灣電力公司\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月/);
+  if (m) {
+    const bm = m[1] + '/' + m[2].padStart(2,'0');
+    document.getElementById('billMonth').value = bm;
+    found++;
+  }
+
+  // 應繳總金額 or 應繳金額 or OCR 遮罩誤讀
+  m = t.match(/應繳總金額\s*([\d,]+\.?\d*)\s*元/) || t.match(/應繳金額\s*([\d,]+\.?\d*)\s*元/);
+  if (!m) m = t.match(/\*{2,}\s*([\d,]+\.?\d*)\s*元/);
+  if (m) { document.getElementById('totalBill').value = m[1].replace(/,/g,''); found++; }
+
+  // 繳費期限 → 可作為下次抄表日參考
+  m = t.match(/繳費期限\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) {
+    const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
+    const due = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+    if (!document.getElementById('meterDateNext').value) {
+      document.getElementById('meterDateNext').value = due;
+    }
+  }
+
+  // 計費期間 (ROC year)
+  m = t.match(/計費期間\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*[~～]\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) {
     const toAD = (y) => parseInt(y) < 200 ? parseInt(y) + 1911 : y;
-    const s = toAD(periodMatch[1]) + '-' + periodMatch[2].padStart(2,'0') + '-' + periodMatch[3].padStart(2,'0');
-    const e = toAD(periodMatch[4]) + '-' + periodMatch[5].padStart(2,'0') + '-' + periodMatch[6].padStart(2,'0');
-    document.getElementById('startDate').value = s;
-    document.getElementById('endDate').value = e;
-    autoBillMonth();
+    document.getElementById('startDate').value = toAD(m[1]) + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+    document.getElementById('endDate').value = toAD(m[4]) + '-' + m[5].padStart(2,'0') + '-' + m[6].padStart(2,'0');
     autoMeterFromEnd();
     found++;
   }
 
-  // 總電費: 5640 元
-  let m = t.match(/總電費\s*([\d,]+\.?\d*)\s*元/);
-  if (m) { document.getElementById('totalBill').value = m[1].replace(/,/g,''); found++; }
+  // 本次抄表日
+  m = t.match(/本?次?抄表[日⽇]\s*(\d{2,4})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) {
+    const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
+    document.getElementById('meterDate').value = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+    autoMeterNext(); found++;
+  }
+
+  // 下次抄表日
+  m = t.match(/下次?抄表[日⽇]\s*(\d{2,4})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) {
+    const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
+    document.getElementById('meterDateNext').value = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+  }
+
+  // 經常用電度數 or 用電度數 or 計費度數
+  m = t.match(/(?:經常|計費|用電)\s*度數\s*([\d,]+\.?\d*)\s*度/);
+  if (!m) m = t.match(/度數\s*([\d,]+\.?\d*)\s*度/);
+  if (m) { document.getElementById('billingKwh').value = m[1].replace(/,/g,''); found++; }
+
+  // 底度費 or 基本電費
+  m = t.match(/(?:底度費|基本電費)\s*([\d,]+\.?\d*)\s*元/);
+  if (m) { document.getElementById('baseFee').value = m[1].replace(/,/g,''); found++; }
 
   // 公共電費
   m = t.match(/公共電費\s*([\d,]+\.?\d*)\s*元/);
   if (m) { document.getElementById('publicElec').value = m[1].replace(/,/g,''); found++; }
 
-  // 基本底度費
-  m = t.match(/基本底度費\s*([\d,]+\.?\d*)\s*元/);
-  if (m) { document.getElementById('baseFee').value = m[1].replace(/,/g,''); found++; }
-
-  // 計費度數
-  m = t.match(/計費度數\s*([\d,]+\.?\d*)\s*度/);
-  if (m) { document.getElementById('billingKwh').value = m[1].replace(/,/g,''); found++; }
-
-  // 本次抄表日 - Western date format 2026/05/15
-  m = t.match(/本次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-  if (m) { document.getElementById('meterDate').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); autoMeterNext(); found++; }
-
-  // 下次抄表日
-  m = t.match(/下次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-  if (m) { document.getElementById('meterDateNext').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); }
-
-  // 當期平均電價
-  m = t.match(/當期平均電價\s*([\d.]+)\s*元\/度/);
+  // 每度平均單價
+  m = t.match(/每度平均單價\s*([\d.]+)\s*元/);
   if (m) { document.getElementById('avgPricePerKwh').value = parseFloat(m[1]).toFixed(3); found++; }
 
-  // 11F-1 戶A 分表
-  m = t.match(/11F-1.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
-  if (m) { document.getElementById('meterAprev').value = m[1]; document.getElementById('meterAcurr').value = m[2]; found++; }
+  // === 我們的 App 明細格式 (fallback) ===
+  if (found === 0) {
+    m = t.match(/總電費\s*([\d,]+\.?\d*)\s*元/);
+    if (m) { document.getElementById('totalBill').value = m[1].replace(/,/g,''); found++; }
 
-  // 11F-2 戶B 分表
-  m = t.match(/11F-2.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
-  if (m) { document.getElementById('meterBprev').value = m[1]; document.getElementById('meterBcurr').value = m[2]; found++; }
+    m = t.match(/計費期間\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*[~～]\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+    if (m) {
+      const toAD = (y) => parseInt(y) < 200 ? parseInt(y) + 1911 : y;
+      document.getElementById('startDate').value = toAD(m[1]) + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+      document.getElementById('endDate').value = toAD(m[4]) + '-' + m[5].padStart(2,'0') + '-' + m[6].padStart(2,'0');
+      autoBillMonth(); autoMeterFromEnd(); found++;
+    }
+
+    m = t.match(/公共電費\s*([\d,]+\.?\d*)\s*元/);
+    if (m) { document.getElementById('publicElec').value = m[1].replace(/,/g,''); found++; }
+
+    m = t.match(/基本底度費\s*([\d,]+\.?\d*)\s*元/);
+    if (m) { document.getElementById('baseFee').value = m[1].replace(/,/g,''); found++; }
+
+    m = t.match(/計費度數\s*([\d,]+\.?\d*)\s*度/);
+    if (m) { document.getElementById('billingKwh').value = m[1].replace(/,/g,''); found++; }
+
+    m = t.match(/當期平均電價\s*([\d.]+)\s*元\/度/);
+    if (m) { document.getElementById('avgPricePerKwh').value = parseFloat(m[1]).toFixed(3); found++; }
+
+    m = t.match(/本次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (m) { document.getElementById('meterDate').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); autoMeterNext(); found++; }
+
+    m = t.match(/下次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (m) { document.getElementById('meterDateNext').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); }
+
+    m = t.match(/11F-1.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
+    if (m) { document.getElementById('meterAprev').value = m[1]; document.getElementById('meterAcurr').value = m[2]; found++; }
+
+    m = t.match(/11F-2.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
+    if (m) { document.getElementById('meterBprev').value = m[1]; document.getElementById('meterBcurr').value = m[2]; found++; }
+  }
 
   if (found > 0) {
     calcBoth();
