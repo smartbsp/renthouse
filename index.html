@@ -360,6 +360,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+</script>
+<script>
 function autoEndDate() {
   const start = document.getElementById('startDate').value;
   if (!start) return;
@@ -603,7 +606,7 @@ function printCurrent() {
 function importPDF(e) {
   const file = e.target.files[0];
   if (!file) return;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  if (typeof pdfjsLib === 'undefined') { alert('PDF 引擎載入中，請稍後再試'); return; }
   const reader = new FileReader();
   reader.onload = async function() {
     try {
