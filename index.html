@@ -239,13 +239,31 @@
   <div class="section-title">11F-1（A戶）</div>
   <div id="tenantA"><div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div></div>
   <button class="small" onclick="addTenant('A')" style="background:#4A90D9;color:#fff;margin-top:8px;">＋ 新增A戶房客</button>
-  <div style="margin-top:8px;"><label>外部簽約人（未居住此處）</label><input id="extSignerA" placeholder="簽約人姓名" onchange="tenants.extSignerA=this.value" value="" style="font-size:13px;"></div>
+  <div style="margin-top:8px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <div onclick="document.getElementById('extSignerABody').style.display=document.getElementById('extSignerABody').style.display==='none'?'':'none'" style="padding:8px 10px;background:#f8fafc;cursor:pointer;font-size:13px;font-weight:600;color:#64748b;user-select:none;">▶ 外部簽約人（未居住此處）</div>
+    <div id="extSignerABody" style="display:none;padding:8px 10px;">
+      <div class="row" style="margin-bottom:4px;"><div class="col"><label>姓名</label><input id="extSignerA_name" placeholder="姓名" onchange="tenants.extSignerA_name=this.value" style="font-size:13px;padding:7px;"></div>
+      <div class="col"><label>身份證字號</label><input id="extSignerA_id" placeholder="身份證字號" onchange="tenants.extSignerA_id=this.value" style="font-size:13px;padding:7px;"></div></div>
+      <div class="row" style="margin-bottom:4px;"><div class="col"><label>電話</label><input type="tel" id="extSignerA_phone" placeholder="電話" onchange="tenants.extSignerA_phone=this.value" style="font-size:13px;padding:7px;"></div>
+      <div class="col"><label>Line ID</label><input id="extSignerA_line" placeholder="Line ID" onchange="tenants.extSignerA_line=this.value" style="font-size:13px;padding:7px;"></div></div>
+      <div class="row"><div class="col"><label>戶籍地址</label><input id="extSignerA_addr" placeholder="戶籍地址" onchange="tenants.extSignerA_addr=this.value" style="font-size:13px;padding:7px;"></div><div class="col"></div></div>
+    </div>
+  </div>
   <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantACount"></div>
 
   <div class="section-title" style="margin-top:18px;">11F-2（B戶）</div>
   <div id="tenantB"><div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div></div>
   <button class="small" onclick="addTenant('B')" style="background:#2E7D32;color:#fff;margin-top:8px;">＋ 新增B戶房客</button>
-  <div style="margin-top:8px;"><label>外部簽約人（未居住此處）</label><input id="extSignerB" placeholder="簽約人姓名" onchange="tenants.extSignerB=this.value" value="" style="font-size:13px;"></div>
+  <div style="margin-top:8px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <div onclick="document.getElementById('extSignerBBody').style.display=document.getElementById('extSignerBBody').style.display==='none'?'':'none'" style="padding:8px 10px;background:#f8fafc;cursor:pointer;font-size:13px;font-weight:600;color:#64748b;user-select:none;">▶ 外部簽約人（未居住此處）</div>
+    <div id="extSignerBBody" style="display:none;padding:8px 10px;">
+      <div class="row" style="margin-bottom:4px;"><div class="col"><label>姓名</label><input id="extSignerB_name" placeholder="姓名" onchange="tenants.extSignerB_name=this.value" style="font-size:13px;padding:7px;"></div>
+      <div class="col"><label>身份證字號</label><input id="extSignerB_id" placeholder="身份證字號" onchange="tenants.extSignerB_id=this.value" style="font-size:13px;padding:7px;"></div></div>
+      <div class="row" style="margin-bottom:4px;"><div class="col"><label>電話</label><input type="tel" id="extSignerB_phone" placeholder="電話" onchange="tenants.extSignerB_phone=this.value" style="font-size:13px;padding:7px;"></div>
+      <div class="col"><label>Line ID</label><input id="extSignerB_line" placeholder="Line ID" onchange="tenants.extSignerB_line=this.value" style="font-size:13px;padding:7px;"></div></div>
+      <div class="row"><div class="col"><label>戶籍地址</label><input id="extSignerB_addr" placeholder="戶籍地址" onchange="tenants.extSignerB_addr=this.value" style="font-size:13px;padding:7px;"></div><div class="col"></div></div>
+    </div>
+  </div>
   <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantBCount"></div>
 
   <button class="green" onclick="saveTenants()" style="margin-top:16px;">💾 儲存房客資料</button>
@@ -528,7 +546,10 @@ let tenants = JSON.parse(localStorage.getItem('renthouseTenants') || '{"A":[],"B
 
 function renderTenants() {
   ['A','B'].forEach(unit => {
-    document.getElementById('extSigner' + unit).value = tenants['extSigner' + unit] || '';
+    ['name','id','phone','line','addr'].forEach(f => {
+      const el = document.getElementById('extSigner' + unit + '_' + f);
+      if (el) el.value = tenants['extSigner' + unit + '_' + f] || '';
+    });
     const div = document.getElementById('tenant' + unit);
     const countEl = document.getElementById('tenant' + unit + 'Count');
     const list = tenants[unit] || [];
@@ -548,7 +569,7 @@ function renderTenants() {
         '<div class="row" style="margin-bottom:4px;"><div class="col"><label>電話</label><input type="tel" value="' + (t.phone||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].phone=this.value" style="font-size:13px;padding:7px;"></div>' +
         '<div class="col"><label>Line ID</label><input value="' + (t.line||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].line=this.value" style="font-size:13px;padding:7px;"></div></div>' +
         '<div class="row"><div class="col"><label>戶籍地址</label><input value="' + (t.addr||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].addr=this.value" style="font-size:13px;padding:7px;"></div>' +
-        '<div class="col"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" ' + (t.isSigner?'checked':'') + ' onchange="tenants[\'' + unit + '\'][' + i + '].isSigner=this.checked;renderTenants()" style="width:16px;height:16px;min-height:16px;accent-color:#4A90D9;"> 簽約人</label></div></div>' +
+        '<div class="col"><label><input type="checkbox" ' + (t.isSigner?'checked':'') + ' onchange="tenants[\'' + unit + '\'][' + i + '].isSigner=this.checked;renderTenants()" style="margin-right:4px;">簽約人</label></div></div>' +
       '</div>'
     ).join('');
   });
