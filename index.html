@@ -627,7 +627,7 @@ function parseBillText(text) {
   let found = 0;
   const t = text.replace(/\s+/g, ' ');
 
-  // 計費期間: look for date range pattern 民國年/月/日~民國年/月/日
+  // 計費期間: 115/03/16~115/05/14
   const periodMatch = t.match(/(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*[~～]\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
   if (periodMatch) {
     const toAD = (y) => parseInt(y) < 200 ? parseInt(y) + 1911 : y;
@@ -640,64 +640,48 @@ function parseBillText(text) {
     found++;
   }
 
-  // 本次抄表日
-  const mdMatch = t.match(/本次抄表日[：:\s]*(\d+)\/(\d+)\/(\d+)/);
-  if (mdMatch) {
-    const ad = parseInt(mdMatch[1]) < 200 ? parseInt(mdMatch[1]) + 1911 : mdMatch[1];
-    document.getElementById('meterDate').value = ad + '-' + mdMatch[2].padStart(2,'0') + '-' + mdMatch[3].padStart(2,'0');
-    autoMeterNext();
-    found++;
-  }
-
-  // 下次抄表日
-  const ndMatch = t.match(/下次抄表日[：:\s]*(\d+)\/(\d+)\/(\d+)/);
-  if (ndMatch) {
-    const ad = parseInt(ndMatch[1]) < 200 ? parseInt(ndMatch[1]) + 1911 : ndMatch[1];
-    document.getElementById('meterDateNext').value = ad + '-' + ndMatch[2].padStart(2,'0') + '-' + ndMatch[3].padStart(2,'0');
-  }
-
-  // 應繳總金額
-  let totalMatch = t.match(/應?繳?總?金額[：:\s]*([\d,]+\.?\d*)\s*元/);
-  if (!totalMatch) totalMatch = t.match(/總計[：:\s]*([\d,]+\.?\d*)\s*元/);
-  if (!totalMatch) totalMatch = t.match(/合計[：:\s]*([\d,]+\.?\d*)\s*元/);
-  if (totalMatch) {
-    document.getElementById('totalBill').value = totalMatch[1].replace(/,/g, '');
-    found++;
-  }
+  // 總電費: 5640 元
+  let m = t.match(/總電費\s*([\d,]+\.?\d*)\s*元/);
+  if (m) { document.getElementById('totalBill').value = m[1].replace(/,/g,''); found++; }
 
   // 公共電費
-  const pubMatch = t.match(/(?:公共|分攤公共)電費[：:\s]*([\d,]+\.?\d*)\s*元/);
-  if (pubMatch) {
-    document.getElementById('publicElec').value = pubMatch[1].replace(/,/g, '');
-    found++;
-  }
+  m = t.match(/公共電費\s*([\d,]+\.?\d*)\s*元/);
+  if (m) { document.getElementById('publicElec').value = m[1].replace(/,/g,''); found++; }
 
-  // 底度費
-  const baseMatch = t.match(/(?:底度|基本).*?[費金][：:\s]*([\d,]+\.?\d*)\s*元/);
-  if (baseMatch) {
-    document.getElementById('baseFee').value = baseMatch[1].replace(/,/g, '');
-    found++;
-  }
+  // 基本底度費
+  m = t.match(/基本底度費\s*([\d,]+\.?\d*)\s*元/);
+  if (m) { document.getElementById('baseFee').value = m[1].replace(/,/g,''); found++; }
 
   // 計費度數
-  const kwhMatch = t.match(/(?:計費|用電)度數[：:\s]*([\d,]+\.?\d*)\s*度/);
-  if (kwhMatch) {
-    document.getElementById('billingKwh').value = kwhMatch[1].replace(/,/g, '');
-    found++;
-  }
+  m = t.match(/計費度數\s*([\d,]+\.?\d*)\s*度/);
+  if (m) { document.getElementById('billingKwh').value = m[1].replace(/,/g,''); found++; }
 
-  // 每度單價
-  const priceMatch = t.match(/每度.*?[價均][：:\s]*([\d.]+)\s*元/);
-  if (priceMatch) {
-    document.getElementById('avgPricePerKwh').value = parseFloat(priceMatch[1]).toFixed(3);
-    found++;
-  }
+  // 本次抄表日 - Western date format 2026/05/15
+  m = t.match(/本次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) { document.getElementById('meterDate').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); autoMeterNext(); found++; }
+
+  // 下次抄表日
+  m = t.match(/下次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) { document.getElementById('meterDateNext').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); }
+
+  // 當期平均電價
+  m = t.match(/當期平均電價\s*([\d.]+)\s*元\/度/);
+  if (m) { document.getElementById('avgPricePerKwh').value = parseFloat(m[1]).toFixed(3); found++; }
+
+  // 11F-1 戶A 分表
+  m = t.match(/11F-1.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
+  if (m) { document.getElementById('meterAprev').value = m[1]; document.getElementById('meterAcurr').value = m[2]; found++; }
+
+  // 11F-2 戶B 分表
+  m = t.match(/11F-2.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
+  if (m) { document.getElementById('meterBprev').value = m[1]; document.getElementById('meterBcurr').value = m[2]; found++; }
 
   if (found > 0) {
+    calcBoth();
     updateAvgPrice();
     document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else {
-    alert('未辨識到台電帳單資料，請手動輸入或確認 PDF 內容。\n\n辨識到的文字片段：\n' + t.slice(0, 300) + '...');
+    alert('未辨識到資料，可能是不同格式的帳單。\n\n辨識到的文字片段：\n' + t.slice(0, 300) + '...');
   }
 }
 
