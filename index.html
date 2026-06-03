@@ -739,7 +739,7 @@ function parseBillText(text) {
     calcBoth();
     updateAvgPrice();
   } else {
-    alert('未辨識到資料。文字片段：\n' + t.slice(0, 300));
+    alert('OCR 辨識完成但無法解析欄位。\n請確認帳單格式是否包含以下關鍵字：\n總電費、計費期間、本次抄表日\n\nOCR 結果：\n' + t.slice(0, 500));
   }
 }
 
