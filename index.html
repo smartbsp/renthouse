@@ -14,7 +14,7 @@
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, 'Segoe UI', Roboto, 'Noto Sans TC', sans-serif;
-    max-width: 480px; margin: 0 auto; padding: 12px 10px 24px;
+    max-width: 100%; margin: 0 auto; padding: 12px 10px 24px;
     background: #f0f2f5; -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
   }
@@ -175,10 +175,13 @@
   .sort-arrow { font-size: 9px; margin-left: 1px; }
 
   /* == Responsive == */
-  @media (min-width: 500px) {
-    body { padding: 16px; }
-    .card { padding: 20px 18px; border-radius: 20px; }
-    input, select { padding: 11px 12px; font-size: 16px; }
+  @media (min-width: 600px) {
+    body { padding: 20px; max-width: 700px; }
+    .card { padding: 22px 20px; border-radius: 20px; }
+    input, select { padding: 12px 14px; font-size: 16px; }
+    .row { gap: 12px; margin-bottom: 12px; }
+    .modal { border-radius: 20px; max-width: 420px; margin: auto; }
+    .modal-overlay { align-items: center; }
   }
 </style>
 </head>
