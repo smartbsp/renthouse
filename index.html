@@ -1343,8 +1343,14 @@ function clearForm() {
 async function initApp() {
   if (isNAS) {
     try {
-      const data = await dbLoad();
-      localStorage.setItem('renthouseRecords', JSON.stringify(data));
+      const apiData = await dbLoad();
+      const localData = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+      if (apiData.length > 0) {
+        localStorage.setItem('renthouseRecords', JSON.stringify(apiData));
+      } else if (localData.length > 0) {
+        dbSave(localData);
+        localStorage.setItem('renthouseRecords', JSON.stringify(localData));
+      }
     } catch(e) {}
   }
   renderHistory();
