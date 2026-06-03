@@ -174,6 +174,13 @@
   th.sortable:active { background: #e8f0fe; }
   .sort-arrow { font-size: 9px; margin-left: 1px; }
 
+  /* == Tabs == */
+  .tab-bar { display: flex; background: #fff; border-radius: 14px; padding: 4px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); position: sticky; top: 8px; z-index: 100; }
+  .tab-btn { flex: 1; padding: 10px 6px; border: none; border-radius: 11px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #64748b; min-height: 36px; margin: 0; transition: all 0.15s; }
+  .tab-btn.active { background: #4A90D9; color: #fff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
   /* == Responsive == */
   @media (min-width: 480px) {
     body { padding: 14px; }
@@ -217,6 +224,33 @@
 </style>
 </head>
 <body>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('tenant')">🏠 房客</button>
+  <button class="tab-btn" onclick="switchTab('electric')">⚡ 電費</button>
+  <button class="tab-btn" onclick="switchTab('water')">💧 水費</button>
+  <button class="tab-btn" onclick="switchTab('summary')">💰 合計</button>
+</div>
+
+<div id="tab-tenant" class="tab-content active">
+<div class="card">
+  <h1>🏠 房客基本資料</h1>
+  <p class="subtitle">11F-1（A戶）& 11F-2（B戶）</p>
+  <div class="section-title">11F-1（A戶）</div>
+  <div id="tenantA"><div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div></div>
+  <button class="small" onclick="addTenant('A')" style="background:#4A90D9;color:#fff;margin-top:8px;">＋ 新增A戶房客</button>
+  <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantACount"></div>
+
+  <div class="section-title" style="margin-top:18px;">11F-2（B戶）</div>
+  <div id="tenantB"><div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div></div>
+  <button class="small" onclick="addTenant('B')" style="background:#2E7D32;color:#fff;margin-top:8px;">＋ 新增B戶房客</button>
+  <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantBCount"></div>
+
+  <button class="green" onclick="saveTenants()" style="margin-top:16px;">💾 儲存房客資料</button>
+</div>
+</div>
+
+<div id="tab-electric" class="tab-content">
 
 <div class="card" id="mainCard">
   <h1>⚡ 電費分攤</h1>
@@ -421,6 +455,10 @@
   </div>
 </div>
 
+</div>
+<div id="tab-water" class="tab-content"></div>
+<div id="tab-summary" class="tab-content"></div>
+
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
   <div class="modal" onclick="event.stopPropagation()">
     <h2>⚡ 電費分攤明細</h2>
@@ -475,6 +513,60 @@ function dbClear() {
     fetch(API + '?action=clear', { method: 'POST' }).catch(() => {});
   }
 }
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelector('.tab-btn[onclick*="' + tab + '"]').classList.add('active');
+  if (tab === 'electric') renderOverview();
+}
+
+let tenants = JSON.parse(localStorage.getItem('renthouseTenants') || '{"A":[],"B":[]}');
+
+function renderTenants() {
+  ['A','B'].forEach(unit => {
+    const div = document.getElementById('tenant' + unit);
+    const countEl = document.getElementById('tenant' + unit + 'Count');
+    const list = tenants[unit] || [];
+    countEl.textContent = '共 ' + list.length + ' 人入住';
+    if (list.length === 0) {
+      div.innerHTML = '<div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div>';
+      return;
+    }
+    div.innerHTML = list.map((t, i) =>
+      '<div style="background:#f8fafc;border-radius:10px;padding:10px;margin-bottom:6px;border:1px solid #e2e8f0;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+          '<span style="font-weight:700;font-size:14px;color:#334155;">' + (t.name || '(未填姓名)') + '</span>' +
+          '<button class="del-btn" onclick="removeTenant(\'' + unit + '\',' + i + ')" style="font-size:14px;">✕</button>' +
+        '</div>' +
+        '<div class="row" style="margin-bottom:4px;"><div class="col"><label>姓名 *</label><input value="' + (t.name||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].name=this.value" style="font-size:13px;padding:7px;"></div>' +
+        '<div class="col"><label>身份證字號</label><input value="' + (t.id||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].id=this.value" style="font-size:13px;padding:7px;"></div></div>' +
+        '<div class="row" style="margin-bottom:4px;"><div class="col"><label>電話</label><input type="tel" value="' + (t.phone||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].phone=this.value" style="font-size:13px;padding:7px;"></div>' +
+        '<div class="col"><label>Line ID</label><input value="' + (t.line||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].line=this.value" style="font-size:13px;padding:7px;"></div></div>' +
+        '<div class="row"><div class="col"><label>戶籍地址</label><input value="' + (t.addr||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].addr=this.value" style="font-size:13px;padding:7px;"></div>' +
+        '<div class="col"><label>簽約人</label><input value="' + (t.contract||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].contract=this.value" placeholder="簽約人姓名" style="font-size:13px;padding:7px;"></div></div>' +
+      '</div>'
+    ).join('');
+  });
+}
+
+function addTenant(unit) {
+  tenants[unit].push({ name: '', id: '', phone: '', line: '', addr: '', contract: '' });
+  renderTenants();
+}
+
+function removeTenant(unit, idx) {
+  tenants[unit].splice(idx, 1);
+  renderTenants();
+}
+
+function saveTenants() {
+  localStorage.setItem('renthouseTenants', JSON.stringify(tenants));
+  alert('✅ 房客資料已儲存');
+}
+
+renderTenants();
 
 function autoEndDate() {
   const start = document.getElementById('startDate').value;
