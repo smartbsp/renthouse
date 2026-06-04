@@ -7,6 +7,8 @@ header('Access-Control-Allow-Headers: Content-Type');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit(0);
 
 $dbFile = __DIR__ . '/renthouse_data.json';
+$tenantFile = __DIR__ . '/renthouse_tenants.json';
+$draftFile = __DIR__ . '/renthouse_draft.json';
 
 function loadDB() {
   global $dbFile;
@@ -78,6 +80,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($action === 'clear') {
     saveDB([]);
     echo json_encode(['ok' => true]);
+    exit;
+  }
+
+  if ($action === 'tenant_save') {
+    file_put_contents($tenantFile, json_encode($input, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    echo json_encode(['ok' => true]);
+    exit;
+  }
+
+  if ($action === 'draft_save') {
+    file_put_contents($draftFile, json_encode($input, JSON_UNESCAPED_UNICODE));
+    echo json_encode(['ok' => true]);
+    exit;
+  }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+  if ($action === 'tenant_list') {
+    if (file_exists($tenantFile)) {
+      echo file_get_contents($tenantFile);
+    } else {
+      echo '{}';
+    }
+    exit;
+  }
+
+  if ($action === 'draft_load') {
+    if (file_exists($draftFile)) {
+      echo file_get_contents($draftFile);
+    } else {
+      echo '{}';
+    }
     exit;
   }
 }
