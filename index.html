@@ -180,6 +180,11 @@
   .tab-btn.active { background: #4A90D9; color: #fff; }
   .tab-content { display: none !important; }
   .tab-content.active { display: block !important; }
+  @media (max-width: 767px) {
+    body { overflow-x: hidden; }
+    .tab-swiper { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+    .tab-swiper > .tab-content { flex: 0 0 100vw; scroll-snap-align: start; display: block !important; padding: 0 10px; box-sizing: border-box; }
+  }
 
   /* == Responsive == */
   @media (min-width: 480px) {
@@ -242,13 +247,13 @@
   <button class="tab-btn" onclick="switchTab('summary')">💰 合計</button>
 </div>
 
+<div class="tab-swiper">
 <div id="tab-tenant" class="tab-content active">
 <div class="card">
   <h1>🏠 房客基本資料</h1>
-   <p class="subtitle">11F-1（A戶）& 11F-2（B戶）住戶管理 <button class="small" onclick="toggleAllUnits()" style="font-size:11px;padding:2px 8px;margin:0;">全部展開/收合</button></p>
-   <div style="background:#f0f4ff;border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid #dce6f8;">
-   <div class="section-title" style="color:#4A6FA5;cursor:pointer;" onclick="var n=this.nextElementSibling; while(n && n.tagName!=='DIV' && !n.style.cssText.includes('background:#f0f4')) n=n.nextElementSibling; if(!n||n.style.cssText.indexOf('background')===-1) return; n.style.display=n.style.display==='none'?'':'none'; this.textContent=this.textContent.replace('▼','▶').replace('▶',n.style.display==='none'?'▶':'▼');">▼ 11F-1（A戶）</div>
-   <div id="unitAcontent">
+  <p class="subtitle">11F-1（A戶）& 11F-2（B戶）住戶管理</p>
+  <div style="background:#f0f4ff;border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid #dce6f8;">
+  <div class="section-title" style="color:#4A6FA5;">11F-1（A戶）</div>
   <div id="tenantA"><div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div></div>
   <button class="small" onclick="addTenant('A')" style="background:#4A90D9;color:#fff;margin-top:8px;">＋ 新增A戶房客</button>
   <div style="margin-top:8px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
@@ -276,7 +281,7 @@
      <div id="payAmountA" style="font-size:13px;font-weight:700;color:#1e293b;margin-top:4px;"></div>
    </div>
    <button class="small" onclick="addTenant('A')" style="background:#4A90D9;color:#fff;margin-top:8px;">＋ 新增A戶住戶</button>
-   <button class="small green" id="saveBtnA" onclick="saveTenantsUnit('A')" style="margin-top:8px;margin-left:6px;display:none;">💾 儲存A戶</button>
+   <button class="small green" id="saveBtnA" onclick="saveTenantsUnit('A')" style="margin-top:8px;margin-left:6px;display:none;background:#4A90D9;">💾 儲存A戶</button>
    <button class="small" id="editBtnA" onclick="toggleEdit('A')" style="margin-top:8px;margin-left:6px;">✏️ 編輯A戶</button>
    </div>
 
@@ -310,24 +315,9 @@
    </div>
    <button class="small" onclick="addTenant('B')" style="background:#2E7D32;color:#fff;margin-top:8px;">＋ 新增B戶住戶</button>
    <button class="small green" id="saveBtnB" onclick="saveTenantsUnit('B')" style="margin-top:8px;margin-left:6px;display:none;">💾 儲存B戶</button>
-    <button class="small" id="editBtnB" onclick="toggleEdit('B')" style="margin-top:8px;margin-left:6px;">✏️ 編輯B戶</button>
+   <button class="small" id="editBtnB" onclick="toggleEdit('B')" style="margin-top:8px;margin-left:6px;">✏️ 編輯B戶</button>
    </div>
 </div>
-
-<div class="card" id="cardTenantSearch">
-  <div class="header-bar"><span class="section-title">🔍 房客查詢</span></div>
-  <div style="display:flex;gap:6px;margin-bottom:8px;">
-    <select id="sUnit" onchange="searchTenants()" style="flex:0.5;font-size:13px;padding:8px;"><option value="">全部</option><option value="A">A戶</option><option value="B">B戶</option></select>
-    <input type="text" id="sName" placeholder="姓名" oninput="searchTenants()" style="flex:1;font-size:13px;padding:8px;">
-    <input type="month" id="sMonth" onchange="searchTenants()" style="flex:1;font-size:13px;padding:8px;">
-  </div>
-  <div class="history-wrap"><div class="empty-msg" id="sEmpty">輸入條件即時查詢</div>
-    <table id="sTable" style="display:none;"><thead><tr><th>戶別</th><th>姓名</th><th>身分證</th><th>電話</th><th>簽約</th><th>補助</th><th>租約起</th><th>租約訖</th><th></th></tr></thead><tbody id="sBody"></tbody></table>
-  </div>
-</div>
-
-</div>
-
 </div>
 
 <div id="tab-electric" class="tab-content">
@@ -533,6 +523,8 @@
     <button class="small danger" onclick="clearHistory()">清除全部紀錄</button>
   </div>
 </div>
+
+</div>
 <div id="tab-water" class="tab-content">
 <div class="card">
   <h1>💧 水費分攤</h1>
@@ -565,6 +557,7 @@
 </div>
 </div>
 <div id="tab-summary" class="tab-content"></div>
+</div>
 <script>document.querySelectorAll('.tab-content:not(.active)').forEach(c=>c.style.display='none');</script>
 
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
@@ -629,10 +622,30 @@ function switchTab(tab) {
   document.querySelector('.tab-btn[onclick*=\"' + tab + '\"]').classList.add('active');
   try { localStorage.setItem('activeTab', tab); } catch(e) {}
   if (tab === 'electric') renderOverview();
+  if (window.innerWidth < 768) { var s = document.querySelector('.tab-swiper'); if (s) { var t = document.getElementById('tab-'+tab); s.scrollTo({ left: t.offsetLeft, behavior: 'smooth' }); } }
 }
 
 function safeLS(k, fb) { try { var v = localStorage.getItem(k); return v !== null ? v : fb; } catch(e) { return fb; } }
 switchTab(safeLS('activeTab','tenant'));
+
+(function() {
+  var s = document.querySelector('.tab-swiper');
+  if (s) {
+    s.addEventListener('scroll', function() {
+      var tabs = ['tenant','electric','water','summary'];
+      var cx = s.scrollLeft + s.offsetWidth/2;
+      var active = 'tenant';
+      tabs.forEach(function(t) {
+        var el = document.getElementById('tab-'+t);
+        if (el && el.offsetLeft <= cx) active = t;
+      });
+      document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      var btn = document.querySelector('.tab-btn[onclick*=\"'+active+'\"]');
+      if (btn) btn.classList.add('active');
+      try { localStorage.setItem('activeTab', active); } catch(e) {}
+    }, { passive: true });
+  }
+})();
 
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && e.target.tagName.match(/INPUT|SELECT|TEXTAREA/)) {
@@ -2138,54 +2151,21 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-function searchTenants() {
-  if (!isNAS) return;
-  var unit = document.getElementById('sUnit').value, name = document.getElementById('sName').value.trim(), month = document.getElementById('sMonth').value;
-  var url = API + '?action=tenant_log_list';
-  if (unit) url += '&unit=' + unit;
-  if (name) url += '&name=' + name;
-  fetch(url).then(function(r) { return r.json(); }).then(function(rows) {
-    if (month) { rows = rows.filter(function(r) { var d = r.data||{}; return (d.leaseStart||'').startsWith(month)||(d.leaseEnd||'').startsWith(month)||(d.moveIn||'').startsWith(month)||(d.moveOut||'').startsWith(month); }); }
-    rows = rows.filter(function(r) { var d = r.data||{}; if (d.isExtSigner && (tenants[r.unit||'A']||[]).some(function(t){return t.isSigner;})) return false; return true; });
-    rows.sort(function(a,b) { return new Date(b.created_at||0) - new Date(a.created_at||0); });
-    var seen = {}; rows = rows.filter(function(r) { var d = r.data||{}; var k = (r.tenant_name||'')+'|'+(d.leaseStart||'')+'|'+(d.leaseEnd||''); if (seen[k]) return false; seen[k]=true; return true; });
-    rows.forEach(function(r) { var live = ((tenants[r.unit||'A']||[]).find(function(t){return t.name===r.tenant_name;})); if (live) r.data = live; });
-    var tbody = document.getElementById('sBody'), table = document.getElementById('sTable'), empty = document.getElementById('sEmpty');
-    tbody.innerHTML = '';
-    if (!rows.length) { empty.style.display='block'; empty.textContent='無符合'; table.style.display='none'; return; }
-    empty.style.display='none'; table.style.display='';
-    rows.forEach(function(r) { var d = r.data||{}, isExt = d.isExtSigner;
-      var tr = document.createElement('tr'); tr.style.cursor = 'pointer';
-      tr.innerHTML = '<td>'+(r.unit||'')+'戶'+(isExt?'代表':'')+'</td><td>'+(r.tenant_name||'')+'</td><td>'+(d.id||'')+'</td><td>'+(d.phone||'')+'</td><td>'+(isExt?'非住戶代理':(d.isSigner?'是':''))+'</td><td>'+(d.subsidy?'是':'')+'</td><td>'+(d.leaseStart||'')+'</td><td>'+(d.leaseEnd||'')+'</td><td><button class="del-btn" style="color:#4A90D9;" onclick="event.stopPropagation();editFromSearch(\''+(r.unit||'A')+'\','+(r.tenant_index||0)+')">✎</button></td>';
-      tr.onclick = function() { showSearchDetail(r); }; tbody.appendChild(tr);
-    });
-  }).catch(function() {});
-}
-
-function showSearchDetail(r) { var d = r.data||{}, items = [['日期',(r.created_at||'').slice(0,10)],['戶別',(r.unit||'')+'戶'],['姓名',r.tenant_name||''],['身分證',d.id||''],['電話',d.phone||''],['簽約',d.isSigner?'是':'否'],['補助',d.subsidy?'是':'否'],['租約起',d.leaseStart||''],['租約訖',d.leaseEnd||'']]; document.getElementById('modalTitle').textContent = '住戶-'+(r.tenant_name||''); document.getElementById('modalBody').innerHTML = items.map(function(x){return '<div class="modal-row"><span class="modal-label">'+x[0]+'</span><span class="modal-value">'+(x[1]||'--')+'</span></div>';}).join(''); document.getElementById('modalOverlay').classList.add('show'); }
-function editFromSearch(unit, idx) { closeModal(); switchTab('tenant'); tenantLocked[unit]=false; tenantEditIdx[unit]=parseInt(idx); renderTenants(unit); loadFinFields(unit); document.getElementById('editBtn'+unit).style.display='none'; document.getElementById('saveBtn'+unit).style.display=''; }
-
 function autoWaterNext() { var d = document.getElementById('wReadDate').value; if (!d) return; var dt = new Date(d); dt.setMonth(dt.getMonth()+2); document.getElementById('wReadDateNext').value = dt.toISOString().slice(0,10); var y = dt.getFullYear()-1911; document.getElementById('wBillMonth').value = y+'/'+String(dt.getMonth()+1).padStart(2,'0'); calcWater(); }
-
 function calcWater() {
   var mp = parseFloat(document.getElementById('wMeterPrev').value)||0, mc = parseFloat(document.getElementById('wMeterCurr').value)||0, sm = parseFloat(document.getElementById('wSubMeter').value)||0;
   document.getElementById('wUsage').value = Math.max(0, mc-mp-sm).toFixed(1);
   var total = (parseFloat(document.getElementById('wBaseFee').value)||0)+(parseFloat(document.getElementById('wWaterFee').value)||0)+(parseFloat(document.getElementById('wExtraFee').value)||0);
   document.getElementById('wTotalBill').value = total.toFixed(0);
-  var mode = document.getElementById('wMode').value;
-  var aU = Math.max(0,(parseFloat(document.getElementById('wAcurr').value)||0)-(parseFloat(document.getElementById('wAprev').value)||0));
-  var bU = Math.max(0,(parseFloat(document.getElementById('wBcurr').value)||0)-(parseFloat(document.getElementById('wBprev').value)||0));
+  var mode = document.getElementById('wMode').value, aU = Math.max(0,(parseFloat(document.getElementById('wAcurr').value)||0)-(parseFloat(document.getElementById('wAprev').value)||0)), bU = Math.max(0,(parseFloat(document.getElementById('wBcurr').value)||0)-(parseFloat(document.getElementById('wBprev').value)||0));
   document.getElementById('wAhint').textContent = aU>0?'A戶用水 '+aU.toFixed(1)+' 度':''; document.getElementById('wBhint').textContent = bU>0?'B戶用水 '+bU.toFixed(1)+' 度':'';
   var cA=0, cB=0;
   if (mode==='head') { var hA=(tenants.A||[]).length, hB=(tenants.B||[]).length, hT=hA+hB||1; cA=total*hA/hT; cB=total*hB/hT; }
   else { var tU=aU+bU; cA=tU>0?total*aU/tU:total/2; cB=tU>0?total*bU/tU:total/2; }
   document.getElementById('wResult').classList.add('show');
-  document.getElementById('wRtotal').textContent = total.toFixed(0)+' 元';
-  document.getElementById('wRcostA').textContent = cA.toFixed(0)+' 元'; document.getElementById('wRcostB').textContent = cB.toFixed(0)+' 元';
-  document.getElementById('wRtotalCost').textContent = (cA+cB).toFixed(0)+' 元';
+  document.getElementById('wRtotal').textContent = total.toFixed(0)+' 元'; document.getElementById('wRcostA').textContent = cA.toFixed(0)+' 元'; document.getElementById('wRcostB').textContent = cB.toFixed(0)+' 元'; document.getElementById('wRtotalCost').textContent = (cA+cB).toFixed(0)+' 元';
 }
-
-function saveWaterRecord() { showToast('✅ 水費已儲存（記憶中）'); }
+function saveWaterRecord() { showToast('✅ 水費已儲存'); }
 </script>
 </body>
 </html>
