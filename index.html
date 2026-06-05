@@ -221,9 +221,19 @@
     input, select { font-size: 18px; padding: 15px 18px; }
     button { font-size: 18px; }
   }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #1e293b; color: #fff; padding: 12px 24px;
+    border-radius: 12px; font-size: 14px; font-weight: 600;
+    z-index: 9999; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  #toast.show { opacity: 1; }
+  input[type="checkbox"] { width: auto; min-height: auto; padding: 0; -webkit-appearance: checkbox !important; appearance: checkbox !important; }
 </style>
 </head>
 <body>
+<div id="toast"></div>
 
 <div class="tab-bar">
   <button class="tab-btn active" onclick="switchTab('tenant')">🏠 房客</button>
@@ -246,15 +256,31 @@
       <div class="row" style="margin-bottom:4px;"><div class="col"><label>姓名</label><input id="extSignerA_name" placeholder="姓名" onchange="tenants.extSignerA_name=this.value" style="font-size:13px;padding:7px;"></div>
       <div class="col"><label>身份證字號</label><input id="extSignerA_id" placeholder="身份證字號" onchange="tenants.extSignerA_id=this.value" style="font-size:13px;padding:7px;"></div></div>
       <div class="row" style="margin-bottom:4px;"><div class="col"><label>電話</label><input type="tel" id="extSignerA_phone" placeholder="電話" onchange="tenants.extSignerA_phone=this.value" style="font-size:13px;padding:7px;"></div>
-      <div class="col"><label>Line ID</label><input id="extSignerA_line" placeholder="Line ID" onchange="tenants.extSignerA_line=this.value" style="font-size:13px;padding:7px;"></div></div>
-      <div class="row"><div class="col"><label>戶籍地址</label><input id="extSignerA_addr" placeholder="戶籍地址" onchange="tenants.extSignerA_addr=this.value" style="font-size:13px;padding:7px;"></div><div class="col"></div></div>
+       <div class="col"><label>Line ID</label><input id="extSignerA_line" placeholder="Line ID" onchange="tenants.extSignerA_line=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row"><div class="col"><label>通訊地址</label><input id="extSignerA_commAddr" placeholder="通訊地址" onchange="tenants.extSignerA_commAddr=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row"><div class="col"><label>戶籍地址</label><input id="extSignerA_addr" placeholder="戶籍地址" onchange="tenants.extSignerA_addr=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row" style="margin-bottom:4px;"><div class="col"><label>租約起日</label><input type="date" id="extSignerA_leaseStart" onchange="tenants.extSignerA_leaseStart=this.value" style="font-size:13px;padding:7px;"></div>
+       <div class="col"><label>租約訖日</label><input type="date" id="extSignerA_leaseEnd" onchange="tenants.extSignerA_leaseEnd=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row"><div class="col"><label style="display:flex;align-items:center;cursor:pointer;"><input type="checkbox" id="extSignerA_subsidy" onchange="tenants.extSignerA_subsidy=this.checked" style="accent-color:#4A90D9;">申請補貼</label></div></div>
     </div>
   </div>
-  <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantACount"></div>
-  </div>
+   <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantACount"></div>
+   <div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;">
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>房租</label><input type="number" id="finA_rent" onchange="tenants.finRentA=this.value;updateFinTotal('A')" placeholder="0" style="font-size:13px;padding:7px;"></div><div class="col"><label>車位</label><input type="number" id="finA_parking" onchange="tenants.finParkingA=this.value;updateFinTotal('A')" placeholder="0" style="font-size:13px;padding:7px;"></div></div>
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>大樓管理費</label><input type="number" id="finA_mgmt" onchange="tenants.finMgmtA=this.value;updateFinTotal('A')" placeholder="0" style="font-size:13px;padding:7px;"></div><div class="col"><label>代管費</label><input type="number" id="finA_agency" onchange="tenants.finAgencyA=this.value;calcPayDates('A')" placeholder="0" style="font-size:13px;padding:7px;"></div></div>
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>實收</label><input id="finA_total" readonly style="font-size:13px;padding:7px;background:#e8f5e9;font-weight:700;" value="0"></div><div class="col"><label>保證金</label><input type="number" id="finA_deposit" onchange="this.dataset.manual='1';tenants.finDepositA=this.value" oninput="this.dataset.manual='1'" placeholder="0" style="font-size:13px;padding:7px;"></div></div>
+     <div class="row"><div class="col"><label>備註</label><textarea id="finA_note" onchange="tenants.finNoteA=this.value" placeholder="" style="font-size:13px;padding:7px;width:100%;height:42px;resize:vertical;"></textarea></div><div class="col"></div></div>
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>繳款方式</label><select id="finA_payMethod" onchange="tenants.finPayMethodA=this.value;calcPayDates('A')" style="font-size:13px;padding:7px;"><option value="">無</option><option value="year">年繳</option><option value="half">半年繳</option><option value="quarter">季繳</option><option value="month">月繳</option></select></div><div class="col"><label>繳款日</label><select id="finA_payDay" onchange="tenants.finPayDayA=this.value;calcPayDates('A')" style="font-size:13px;padding:7px;"><option value="">擇日</option><option value="1">1日</option><option value="2">2日</option><option value="3">3日</option><option value="4">4日</option><option value="5">5日</option><option value="6">6日</option><option value="7">7日</option><option value="8">8日</option><option value="9">9日</option><option value="10">10日</option><option value="11">11日</option><option value="12">12日</option><option value="13">13日</option><option value="14">14日</option><option value="15">15日</option><option value="16">16日</option><option value="17">17日</option><option value="18">18日</option><option value="19">19日</option><option value="20">20日</option><option value="21">21日</option><option value="22">22日</option><option value="23">23日</option><option value="24">24日</option><option value="25">25日</option><option value="26">26日</option><option value="27">27日</option><option value="28">28日</option><option value="29">29日</option><option value="30">30日</option><option value="31">31日</option></select></div></div>
+     <div id="payDatesA" style="font-size:12px;color:#475569;max-height:140px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:4px;"></div>
+     <div id="payAmountA" style="font-size:13px;font-weight:700;color:#1e293b;margin-top:4px;"></div>
+   </div>
+   <button class="small" onclick="addTenant('A')" style="background:#4A90D9;color:#fff;margin-top:8px;">＋ 新增A戶住戶</button>
+   <button class="small green" id="saveBtnA" onclick="saveTenantsUnit('A')" style="margin-top:8px;margin-left:6px;display:none;">💾 儲存A戶</button>
+   <button class="small" id="editBtnA" onclick="toggleEdit('A')" style="margin-top:8px;margin-left:6px;">✏️ 編輯A戶</button>
+   </div>
 
   <div style="background:#f0faf3;border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid #d2ecd8;">
-  <div class="section-title" style="color:#2E7D32;">11F-2（B戶）</div>
+  <div class="section-title" style="color:#2E7D32;border-left-color:#2E7D32;">11F-2（B戶）</div>
   <div id="tenantB"><div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div></div>
   <button class="small" onclick="addTenant('B')" style="background:#2E7D32;color:#fff;margin-top:8px;">＋ 新增B戶房客</button>
   <div style="margin-top:8px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
@@ -263,14 +289,28 @@
       <div class="row" style="margin-bottom:4px;"><div class="col"><label>姓名</label><input id="extSignerB_name" placeholder="姓名" onchange="tenants.extSignerB_name=this.value" style="font-size:13px;padding:7px;"></div>
       <div class="col"><label>身份證字號</label><input id="extSignerB_id" placeholder="身份證字號" onchange="tenants.extSignerB_id=this.value" style="font-size:13px;padding:7px;"></div></div>
       <div class="row" style="margin-bottom:4px;"><div class="col"><label>電話</label><input type="tel" id="extSignerB_phone" placeholder="電話" onchange="tenants.extSignerB_phone=this.value" style="font-size:13px;padding:7px;"></div>
-      <div class="col"><label>Line ID</label><input id="extSignerB_line" placeholder="Line ID" onchange="tenants.extSignerB_line=this.value" style="font-size:13px;padding:7px;"></div></div>
-      <div class="row"><div class="col"><label>戶籍地址</label><input id="extSignerB_addr" placeholder="戶籍地址" onchange="tenants.extSignerB_addr=this.value" style="font-size:13px;padding:7px;"></div><div class="col"></div></div>
+       <div class="col"><label>Line ID</label><input id="extSignerB_line" placeholder="Line ID" onchange="tenants.extSignerB_line=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row"><div class="col"><label>通訊地址</label><input id="extSignerB_commAddr" placeholder="通訊地址" onchange="tenants.extSignerB_commAddr=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row"><div class="col"><label>戶籍地址</label><input id="extSignerB_addr" placeholder="戶籍地址" onchange="tenants.extSignerB_addr=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row" style="margin-bottom:4px;"><div class="col"><label>租約起日</label><input type="date" id="extSignerB_leaseStart" onchange="tenants.extSignerB_leaseStart=this.value" style="font-size:13px;padding:7px;"></div>
+       <div class="col"><label>租約訖日</label><input type="date" id="extSignerB_leaseEnd" onchange="tenants.extSignerB_leaseEnd=this.value" style="font-size:13px;padding:7px;"></div></div>
+       <div class="row"><div class="col"><label style="display:flex;align-items:center;cursor:pointer;"><input type="checkbox" id="extSignerB_subsidy" onchange="tenants.extSignerB_subsidy=this.checked" style="accent-color:#2E7D32;">申請補貼</label></div></div>
     </div>
   </div>
-  <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantBCount"></div>
-  </div>
-
-  <button class="green" onclick="saveTenants()" style="margin-top:16px;">💾 儲存房客資料</button>
+   <div style="font-size:12px;color:#64748b;margin-top:4px;" id="tenantBCount"></div>
+   <div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;">
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>房租</label><input type="number" id="finB_rent" onchange="tenants.finRentB=this.value;updateFinTotal('B')" placeholder="0" style="font-size:13px;padding:7px;"></div><div class="col"><label>車位</label><input type="number" id="finB_parking" onchange="tenants.finParkingB=this.value;updateFinTotal('B')" placeholder="0" style="font-size:13px;padding:7px;"></div></div>
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>大樓管理費</label><input type="number" id="finB_mgmt" onchange="tenants.finMgmtB=this.value;updateFinTotal('B')" placeholder="0" style="font-size:13px;padding:7px;"></div><div class="col"><label>代管費</label><input type="number" id="finB_agency" onchange="tenants.finAgencyB=this.value;calcPayDates('B')" placeholder="0" style="font-size:13px;padding:7px;"></div></div>
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>實收</label><input id="finB_total" readonly style="font-size:13px;padding:7px;background:#e8f5e9;font-weight:700;" value="0"></div><div class="col"><label>保證金</label><input type="number" id="finB_deposit" onchange="this.dataset.manual='1';tenants.finDepositB=this.value" oninput="this.dataset.manual='1'" placeholder="0" style="font-size:13px;padding:7px;"></div></div>
+     <div class="row"><div class="col"><label>備註</label><textarea id="finB_note" onchange="tenants.finNoteB=this.value" placeholder="" style="font-size:13px;padding:7px;width:100%;height:42px;resize:vertical;"></textarea></div><div class="col"></div></div>
+     <div class="row" style="margin-bottom:4px;"><div class="col"><label>繳款方式</label><select id="finB_payMethod" onchange="tenants.finPayMethodB=this.value;calcPayDates('B')" style="font-size:13px;padding:7px;"><option value="">無</option><option value="year">年繳</option><option value="half">半年繳</option><option value="quarter">季繳</option><option value="month">月繳</option></select></div><div class="col"><label>繳款日</label><select id="finB_payDay" onchange="tenants.finPayDayB=this.value;calcPayDates('B')" style="font-size:13px;padding:7px;"><option value="">擇日</option><option value="1">1日</option><option value="2">2日</option><option value="3">3日</option><option value="4">4日</option><option value="5">5日</option><option value="6">6日</option><option value="7">7日</option><option value="8">8日</option><option value="9">9日</option><option value="10">10日</option><option value="11">11日</option><option value="12">12日</option><option value="13">13日</option><option value="14">14日</option><option value="15">15日</option><option value="16">16日</option><option value="17">17日</option><option value="18">18日</option><option value="19">19日</option><option value="20">20日</option><option value="21">21日</option><option value="22">22日</option><option value="23">23日</option><option value="24">24日</option><option value="25">25日</option><option value="26">26日</option><option value="27">27日</option><option value="28">28日</option><option value="29">29日</option><option value="30">30日</option><option value="31">31日</option></select></div></div>
+     <div id="payDatesB" style="font-size:12px;color:#475569;max-height:140px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:4px;"></div>
+     <div id="payAmountB" style="font-size:13px;font-weight:700;color:#1e293b;margin-top:4px;"></div>
+   </div>
+   <button class="small" onclick="addTenant('B')" style="background:#2E7D32;color:#fff;margin-top:8px;">＋ 新增B戶住戶</button>
+   <button class="small green" id="saveBtnB" onclick="saveTenantsUnit('B')" style="margin-top:8px;margin-left:6px;display:none;">💾 儲存B戶</button>
+   <button class="small" id="editBtnB" onclick="toggleEdit('B')" style="margin-top:8px;margin-left:6px;">✏️ 編輯B戶</button>
+   </div>
 </div>
 </div>
 
@@ -400,7 +440,6 @@
     <div class="result-row total"><span class="result-label">應繳總額</span><span id="r_total"></span></div>
     <button class="green" id="saveBtn" onclick="saveRecord()" style="margin-top:10px;">💾 儲存本期記錄</button>
   </div>
-</div>
 </div>
 
 <div class="card" id="batchCard">
@@ -540,64 +579,187 @@ function dbClear() {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => { c.classList.remove('active'); c.style.display = 'none'; });
-  const target = document.getElementById('tab-' + tab);
-  target.classList.add('active');
-  target.style.display = 'block';
-  document.querySelector('.tab-btn[onclick*="' + tab + '"]').classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(c){ c.classList.remove('active'); });
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelector('.tab-btn[onclick*=\"' + tab + '\"]').classList.add('active');
+  try { localStorage.setItem('activeTab', tab); } catch(e) {}
   if (tab === 'electric') renderOverview();
 }
 
-let tenants = JSON.parse(localStorage.getItem('renthouseTenants') || '{"A":[],"B":[]}');
+function safeLS(k, fb) { try { var v = localStorage.getItem(k); return v !== null ? v : fb; } catch(e) { return fb; } }
+switchTab(safeLS('activeTab','tenant'));
 
-function renderTenants() {
-  ['A','B'].forEach(unit => {
-    ['name','id','phone','line','addr'].forEach(f => {
-      const el = document.getElementById('extSigner' + unit + '_' + f);
-      if (el) el.value = tenants['extSigner' + unit + '_' + f] || '';
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && e.target.tagName.match(/INPUT|SELECT|TEXTAREA/)) {
+    e.preventDefault();
+    var fs = document.querySelectorAll('input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button');
+    var idx = Array.prototype.indexOf.call(fs, e.target);
+    if (idx >= 0 && idx < fs.length - 1) { fs[idx + 1].focus(); fs[idx + 1].select(); }
+  }
+});
+
+let tenants = JSON.parse(localStorage.getItem('renthouseTenants') || '{"A":[],"B":[]}');
+let tenantLocked = { A: true, B: true };
+let tenantEditIdx = { A: -1, B: -1 };
+
+function renderTenants(unit) {
+  var units = unit ? [unit] : ['A','B'];
+  units.forEach(function(u) {
+    ['name','id','phone','line','commAddr','addr','leaseStart','leaseEnd','moveIn','moveOut','subsidy'].forEach(function(f) {
+      var el = document.getElementById('extSigner' + u + '_' + f);
+      if (el) { if (f === 'subsidy') el.checked = !!tenants['extSigner' + u + '_' + f]; else el.value = tenants['extSigner' + u + '_' + f] || ''; el.disabled = tenantLocked[u]; }
     });
-    const div = document.getElementById('tenant' + unit);
-    const countEl = document.getElementById('tenant' + unit + 'Count');
-    const list = tenants[unit] || [];
+    var hasExtSigner = ['name','id','phone','line','commAddr','addr','leaseStart','leaseEnd'].some(function(f) { return tenants['extSigner'+u+'_'+f]; });
+    var extBody = document.getElementById('extSigner' + u + 'Body');
+    var hasTenantSigner = (tenants[u] || []).some(function(t) { return t.isSigner; });
+    if (extBody) {
+      if (hasTenantSigner) { extBody.parentElement.style.display = 'none'; }
+      else { extBody.parentElement.style.display = ''; extBody.style.display = hasExtSigner ? '' : 'none'; }
+    }
+    var div = document.getElementById('tenant' + u);
+    var countEl = document.getElementById('tenant' + u + 'Count');
+    var list = tenants[u] || [];
     countEl.textContent = '共 ' + list.length + ' 人入住';
+    var locked = tenantLocked[u];
     if (list.length === 0) {
       div.innerHTML = '<div style="color:#cbd5e1;text-align:center;padding:12px;">尚無房客</div>';
       return;
     }
-    div.innerHTML = list.map((t, i) =>
-      '<div style="background:#f8fafc;border-radius:10px;padding:10px;margin-bottom:6px;border:1px solid #e2e8f0;">' +
+    div.innerHTML = list.map(function(t, i) {
+      var editable = !locked || i === tenantEditIdx[u];
+      var ref = (i > 0 && list[0]) ? list[0] : null;
+      var ls = t.sameDates && ref ? ref.leaseStart : (t.sameExt ? (tenants['extSigner'+u+'_leaseStart']||'') : (t.leaseStart||''));
+      var le = t.sameDates && ref ? ref.leaseEnd : (t.sameExt ? (tenants['extSigner'+u+'_leaseEnd']||'') : (t.leaseEnd||''));
+      var mi = t.sameDates && ref ? ref.moveIn : (t.sameExt ? (tenants['extSigner'+u+'_moveIn']||'') : (t.moveIn||''));
+      var mo = t.sameDates && ref ? ref.moveOut : (t.sameExt ? (tenants['extSigner'+u+'_moveOut']||'') : (t.moveOut||''));
+      var sh = function(v) { return editable ? '' : (v ? '' : 'display:none;'); };
+      return '<div style="background:#f8fafc;border-radius:10px;padding:10px;margin-bottom:6px;border:1px solid #e2e8f0;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-          '<span style="font-weight:700;font-size:14px;color:#334155;">' + (t.name || '(未填姓名)') + '</span>' +
-          '<button class="del-btn" onclick="removeTenant(\'' + unit + '\',' + i + ')" style="font-size:14px;">✕</button>' +
+          '<span style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;"><span style="background:'+(u==='A'?'#4A90D9':'#2E7D32')+';color:#fff;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;flex-shrink:0;">住戶'+(i+1)+'</span><span style="font-weight:700;font-size:14px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(t.name||'(未填姓名)')+'</span></span>' +
+          (editable ? '<button class="del-btn" onclick="removeTenant(\''+u+'\','+i+')" style="font-size:14px;">✕</button>' : '') +
         '</div>' +
-        '<div class="row" style="margin-bottom:4px;"><div class="col"><label>姓名 *</label><input value="' + (t.name||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].name=this.value" style="font-size:13px;padding:7px;"></div>' +
-        '<div class="col"><label>身份證字號</label><input value="' + (t.id||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].id=this.value" style="font-size:13px;padding:7px;"></div></div>' +
-        '<div class="row" style="margin-bottom:4px;"><div class="col"><label>電話</label><input type="tel" value="' + (t.phone||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].phone=this.value" style="font-size:13px;padding:7px;"></div>' +
-        '<div class="col"><label>Line ID</label><input value="' + (t.line||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].line=this.value" style="font-size:13px;padding:7px;"></div></div>' +
-        '<div class="row"><div class="col"><label>戶籍地址</label><input value="' + (t.addr||'') + '" onchange="tenants[\'' + unit + '\'][' + i + '].addr=this.value" style="font-size:13px;padding:7px;"></div>' +
-        '<div class="col"><label><input type="checkbox" ' + (t.isSigner?'checked':'') + ' onclick="tenants[\'' + unit + '\'][' + i + '].isSigner=this.checked;renderTenants()" style="margin-right:4px;">簽約人</label></div></div>' +
-      '</div>'
-    ).join('');
+        '<div class="row" style="margin-bottom:4px;"><div class="col"><label>姓名 *</label><input value="'+(t.name||'')+'" '+(editable ? 'onchange="tenants[\''+u+'\']['+i+'].name=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div>' +
+        '<div class="col" style="'+sh(t.id)+'"><label>身份證字號</label><input value="'+(t.id||'')+'" '+(editable ? 'onchange="tenants[\''+u+'\']['+i+'].id=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div></div>' +
+        '<div class="row" style="margin-bottom:4px;'+sh(t.phone||t.line)+'"><div class="col" style="'+sh(t.phone)+'"><label>電話</label><input type="tel" value="'+(t.phone||'')+'" '+(editable ? 'onchange="tenants[\''+u+'\']['+i+'].phone=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div>' +
+        '<div class="col" style="'+sh(t.line)+'"><label>Line ID</label><input value="'+(t.line||'')+'" '+(editable ? 'onchange="tenants[\''+u+'\']['+i+'].line=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div></div>' +
+        '<div class="row" style="'+sh(t.isSigner||t.subsidy)+'"><div class="col"><div style="display:flex;gap:16px;align-items:center;"><label style="display:flex;align-items:center;cursor:pointer;"><input type="checkbox" '+(t.isSigner?'checked':'')+' '+(editable ? 'onclick="tenants[\''+u+'\']['+i+'].isSigner=this.checked;setTimeout(function(){renderTenants(\''+u+'\')},0)"' : 'disabled')+' style="margin-right:4px;accent-color:'+(u==='A'?'#4A90D9':'#2E7D32')+';">簽約人</label>' +
+        '<label style="display:flex;align-items:center;cursor:pointer;"><input type="checkbox" '+(t.subsidy?'checked':'')+' '+(editable ? 'onclick="tenants[\''+u+'\']['+i+'].subsidy=this.checked"' : 'disabled')+' style="margin-right:4px;accent-color:'+(u==='A'?'#4A90D9':'#2E7D32')+';">申請補貼</label></div></div></div>' +
+        '<div class="row" style="margin-bottom:4px;'+sh(t.commAddr)+'"><div class="col"><label>通訊地址</label><input value="'+(t.commAddr||'')+'" '+(editable ? 'onchange="tenants[\''+u+'\']['+i+'].commAddr=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div></div>' +
+        '<div class="row" style="margin-bottom:4px;'+sh(t.addr)+'"><div class="col"><label>戶籍地址</label><input value="'+(t.addr||'')+'" '+(editable ? 'onchange="tenants[\''+u+'\']['+i+'].addr=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div></div>' +
+        ((i===0 && !hasTenantSigner) ? '<div class="row" style="margin-bottom:4px;"><div class="col"><label style="display:flex;align-items:center;cursor:pointer;"><input type="checkbox" '+(t.sameExt?'checked':'')+' '+(editable ? 'onchange="if(this.checked){tenants[\''+u+'\']['+i+'].sameExt=true;tenants[\''+u+'\']['+i+'].leaseStart=tenants.extSigner'+u+'_leaseStart;tenants[\''+u+'\']['+i+'].leaseEnd=tenants.extSigner'+u+'_leaseEnd;tenants[\''+u+'\']['+i+'].moveIn=tenants.extSigner'+u+'_moveIn;tenants[\''+u+'\']['+i+'].moveOut=tenants.extSigner'+u+'_moveOut;renderTenants(\''+u+'\')}else{tenants[\''+u+'\']['+i+'].sameExt=false;renderTenants(\''+u+'\')}"' : 'disabled')+' style="margin-right:4px;accent-color:'+(u==='A'?'#4A90D9':'#2E7D32')+';">同代表簽約人（日期同步）</label></div></div>' : '') +
+        (i > 0 && ref ? '<div class="row" style="margin-bottom:4px;"><div class="col"><label style="display:flex;align-items:center;cursor:pointer;"><input type="checkbox" '+(t.sameDates?'checked':'')+' '+(editable ? 'onchange="if(this.checked){tenants[\''+u+'\']['+i+'].sameDates=true;tenants[\''+u+'\']['+i+'].leaseStart=tenants[\''+u+'\'][0].leaseStart;tenants[\''+u+'\']['+i+'].leaseEnd=tenants[\''+u+'\'][0].leaseEnd;tenants[\''+u+'\']['+i+'].moveIn=tenants[\''+u+'\'][0].moveIn;tenants[\''+u+'\']['+i+'].moveOut=tenants[\''+u+'\'][0].moveOut;tenants[\''+u+'\']['+i+'].sameExt=false;renderTenants(\''+u+'\')}else{tenants[\''+u+'\']['+i+'].sameDates=false;renderTenants(\''+u+'\')}"' : 'disabled')+' style="margin-right:4px;accent-color:'+(u==='A'?'#4A90D9':'#2E7D32')+';">同住戶一（日期同步）</label></div></div>' : '') +
+        '<div class="row" style="margin-bottom:4px;'+sh(t.leaseStart||t.leaseEnd||t.moveIn||t.moveOut||t.sameDates||t.sameExt)+'"><div class="col" style="'+sh(ls)+'"><label>租約起日</label><input type="date" value="'+ls+'" '+(editable && !t.sameDates && !t.sameExt ? 'onchange="tenants[\''+u+'\']['+i+'].leaseStart=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div>' +
+        '<div class="col" style="'+sh(le)+'"><label>租約訖日</label><input type="date" value="'+le+'" '+(editable && !t.sameDates && !t.sameExt ? 'onchange="tenants[\''+u+'\']['+i+'].leaseEnd=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div></div>' +
+        '<div class="row" style="margin-bottom:4px;'+sh(t.moveIn||t.moveOut)+'"><div class="col" style="'+sh(mi)+'"><label>搬入日期</label><input type="date" value="'+mi+'" '+(editable && !t.sameDates && !t.sameExt ? 'onchange="tenants[\''+u+'\']['+i+'].moveIn=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div>' +
+        '<div class="col" style="'+sh(mo)+'"><label>搬離日期</label><input type="date" value="'+mo+'" '+(editable && !t.sameDates && !t.sameExt ? 'onchange="tenants[\''+u+'\']['+i+'].moveOut=this.value"' : 'disabled')+' style="font-size:13px;padding:7px;"></div></div>' +
+      '</div>';
+    }).join('');
+    loadFinFields(u);
   });
 }
 
+function loadFinFields(unit) {
+  var keys = { rent:'Rent', parking:'Parking', mgmt:'Mgmt', agency:'Agency', deposit:'Deposit', note:'Note' };
+  var locked = tenantLocked[unit];
+  Object.keys(keys).forEach(function(f) {
+    var el = document.getElementById('fin'+unit+'_'+f);
+    if (el) {
+      if (f !== 'deposit' || !el.dataset.manual || el.dataset.manual === '0') el.value = tenants['fin'+keys[f]+unit] || '';
+      el.disabled = locked;
+    }
+  });
+  var pm = document.getElementById('fin'+unit+'_payMethod'); if (pm) { pm.value = tenants['finPayMethod'+unit] || ''; pm.disabled = locked; }
+  var pd = document.getElementById('fin'+unit+'_payDay'); if (pd) { pd.value = tenants['finPayDay'+unit] || ''; pd.disabled = locked; }
+  updateFinTotal(unit); calcPayDates(unit);
+}
+
+function toggleEdit(unit) {
+  tenantLocked[unit] = false; tenantEditIdx[unit] = -1;
+  renderTenants(unit); loadFinFields(unit);
+  document.getElementById('editBtn'+unit).style.display = 'none';
+  document.getElementById('saveBtn'+unit).style.display = '';
+}
+
+function saveTenantsUnit(unit) {
+  cleanEmptyTenants(); persistTenants();
+  tenantLocked[unit] = true; tenantEditIdx[unit] = -1;
+  renderTenants(unit); loadFinFields(unit);
+  document.getElementById('editBtn'+unit).style.display = '';
+  document.getElementById('saveBtn'+unit).style.display = 'none';
+  showToast('✅ ' + unit + '戶資料已儲存');
+}
+
 function addTenant(unit) {
-  tenants[unit].push({ name: '', id: '', phone: '', line: '', addr: '', isSigner: false });
-  renderTenants();
+  tenants[unit].push({ name:'', id:'', phone:'', line:'', commAddr:'', addr:'', isSigner:false, subsidy:false, leaseStart:'', leaseEnd:'', moveIn:'', moveOut:'' });
+  tenantLocked[unit] = false; tenantEditIdx[unit] = tenants[unit].length - 1;
+  renderTenants(unit); loadFinFields(unit);
+  document.getElementById('editBtn'+unit).style.display = 'none';
+  document.getElementById('saveBtn'+unit).style.display = '';
 }
 
-function removeTenant(unit, idx) {
-  tenants[unit].splice(idx, 1);
-  renderTenants();
+function removeTenant(unit, idx) { tenants[unit].splice(idx, 1); renderTenants(unit); }
+
+function cleanEmptyTenants() {
+  tenants.A = tenants.A.filter(function(t) { return t.name && t.name.trim(); });
+  tenants.B = tenants.B.filter(function(t) { return t.name && t.name.trim(); });
 }
 
-function saveTenants() {
+function persistTenants() {
   localStorage.setItem('renthouseTenants', JSON.stringify(tenants));
   if (isNAS) {
-    fetch(API + '?action=tenant_save', { method: 'POST', body: JSON.stringify(tenants) }).catch(() => {});
+    fetch(API + '?action=tenant_save', { method:'POST', body:JSON.stringify(tenants) }).catch(function(){});
   }
-  alert('✅ 房客資料已儲存');
+}
+
+function saveTenants() { cleanEmptyTenants(); persistTenants(); tenantLocked = { A:true, B:true }; renderTenants(); showToast('✅ 房客資料已儲存'); }
+
+function showToast(msg) { var t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.add('show'); clearTimeout(t._timeout); t._timeout = setTimeout(function() { t.classList.remove('show'); }, 2000); }
+
+function calcPayDates(unit) {
+  var method = document.getElementById('fin'+unit+'_payMethod').value;
+  var div = document.getElementById('payDates'+unit);
+  if (!method) { div.innerHTML = ''; return; }
+  var list = (tenants[unit] && tenants[unit][0]) ? tenants[unit][0] : null;
+  var ls = (list && list.leaseStart) ? list.leaseStart : (tenants['extSigner'+unit+'_leaseStart'] || '');
+  var le = (list && list.leaseEnd) ? list.leaseEnd : (tenants['extSigner'+unit+'_leaseEnd'] || '');
+  if (!ls || !le) { div.innerHTML = '<span style=\"color:#94a3b8;\">請先填寫租約起訖日</span>'; return; }
+  var pd = parseInt(document.getElementById('fin'+unit+'_payDay').value) || new Date(ls).getDate();
+  var start = new Date(ls); start.setDate(Math.min(pd, 28));
+  var end = new Date(le);
+  var months = { year:12, half:6, quarter:3, month:1 };
+  var interval = months[method];
+  if (!interval) return;
+  var dates = [];
+  var cur = new Date(start);
+  while (cur <= end) { dates.push(new Date(cur)); cur.setMonth(cur.getMonth() + interval); }
+  var saved = tenants['finPayDates'+unit] || [];
+  var locked = tenantLocked[unit];
+  var filtered = dates;
+  if (locked) { filtered = dates.filter(function(d) { var ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); return saved.indexOf(ds) < 0; }); }
+  if (locked && filtered.length === 0) { div.innerHTML = '<span style=\"color:#22c55e;\">✓ 已全數繳清</span>'; }
+  else {
+    div.innerHTML = filtered.map(function(d, i) {
+      var ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      var checked = saved.indexOf(ds) >= 0 ? ' checked' : '';
+      return '<label style=\"display:inline-block;margin:2px 6px 2px 0;cursor:pointer;font-size:12px;\"><input type=\"checkbox\" ' + checked + (locked ? ' disabled' : ' onchange=\"var a=tenants.finPayDates'+unit+'||[];if(this.checked){a.push(\''+ds+'\')}else{a=a.filter(function(x){return x!==\''+ds+'\'})};tenants.finPayDates'+unit+'=a\"') + ' style=\"margin-right:3px;accent-color:'+(unit==='A'?'#4A90D9':'#2E7D32')+';\">' + (i+1) + '.' + ds + '</label>';
+    }).join('');
+  }
+  var monthly = parseFloat(document.getElementById('fin'+unit+'_total').value) || 0;
+  var mult = { month:1, quarter:3, half:6, year:12 };
+  var amt = monthly * (mult[method] || 1);
+  var agency = (parseFloat(document.getElementById('fin'+unit+'_agency').value) || 0) * (mult[method] || 1);
+  document.getElementById('payAmount'+unit).innerHTML = '每期應繳：' + amt + ' 元（' + monthly + ' × ' + (mult[method]||1) + '）<br>每期實收：' + (amt - agency) + ' 元（' + amt + ' − 代管費' + agency + '）';
+}
+
+function updateFinTotal(unit) {
+  var rent = parseFloat(document.getElementById('fin'+unit+'_rent').value) || 0;
+  var parking = parseFloat(document.getElementById('fin'+unit+'_parking').value) || 0;
+  var mgmt = parseFloat(document.getElementById('fin'+unit+'_mgmt').value) || 0;
+  var total = rent + parking + mgmt;
+  document.getElementById('fin'+unit+'_total').value = total;
+  var dep = document.getElementById('fin'+unit+'_deposit');
+  if (!dep.dataset.manual || dep.dataset.manual === '0') dep.value = (total * 2).toFixed(0);
 }
 
 renderTenants();

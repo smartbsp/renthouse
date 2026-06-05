@@ -6,32 +6,32 @@ header('Access-Control-Allow-Headers: Content-Type');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit(0);
 
-$dbFile = __DIR__ . '/renthouse_data.json';
-$tenantFile = __DIR__ . '/renthouse_tenants.json';
-$draftFile = __DIR__ . '/renthouse_draft.json';
-
-function loadDB() {
-  global $dbFile;
-  if (!file_exists($dbFile)) {
-    file_put_contents($dbFile, '[]');
-    return [];
-  }
-  return json_decode(file_get_contents($dbFile), true) ?: [];
-}
-
-function saveDB($data) {
-  global $dbFile;
-  file_put_contents($dbFile, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-  // backup
-  $backupDir = __DIR__ . '/renthouse_backups';
-  if (!is_dir($backupDir)) mkdir($backupDir, 0755, true);
-  copy($dbFile, $backupDir . '/backup_' . date('Ymd_His') . '.json');
-}
+$mysqli = new mysqli('localhost', 'march_2011', 'lohas2529time***', 'lohastime', 3306);
+if ($mysqli->connect_error) exit(json_encode(['error' => 'DB connection failed']));
+$mysqli->set_charset('utf8');
 
 $action = $_GET['action'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'list') {
-  $records = loadDB();
+  $result = $mysqli->query('SELECT * FROM renthouse_records ORDER BY endDate DESC');
+  $records = [];
+  while ($row = $result->fetch_assoc()) {
+    $row['id'] = (int)$row['id'];
+    $row['totalBill'] = (float)$row['totalBill'];
+    $row['publicElec'] = (float)$row['publicElec'];
+    $row['baseFee'] = (float)$row['baseFee'];
+    $row['billingKwh'] = (float)$row['billingKwh'];
+    $row['meterAprev'] = (float)$row['meterAprev'];
+    $row['meterAcurr'] = (float)$row['meterAcurr'];
+    $row['meterA'] = (float)$row['meterA'];
+    $row['meterBprev'] = (float)$row['meterBprev'];
+    $row['meterBcurr'] = (float)$row['meterBcurr'];
+    $row['meterB'] = (float)$row['meterB'];
+    $row['pricePerKwh'] = (float)$row['pricePerKwh'];
+    $row['costA'] = (float)$row['costA'];
+    $row['costB'] = (float)$row['costB'];
+    $records[] = $row;
+  }
   echo json_encode($records, JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($input === null) { http_response_code(400); echo '{"error":"Invalid JSON"}'; exit; }
 
   if ($action === 'clear') {
-    saveDB([]);
+    $mysqli->query('DELETE FROM renthouse_records');
     echo json_encode(['ok' => true]);
     exit;
   }
@@ -50,47 +50,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$input || empty($input)) { http_response_code(400); echo '{"error":"Invalid JSON"}'; exit; }
 
   if ($action === 'save') {
-    $records = loadDB();
     $newRecords = $input['records'] ?? [$input];
-
+    $count = 0;
     foreach ($newRecords as $new) {
       if (empty($new['id'])) $new['id'] = round(microtime(true) * 1000);
-      // replace existing or add new
-      $found = false;
-      foreach ($records as $i => $r) {
-        if ($r['id'] === $new['id']) { $records[$i] = $new; $found = true; break; }
+      $id = (int)$new['id'];
+      $fields = [
+        'billMonth', 'startDate', 'endDate', 'totalBill', 'publicElec',
+        'baseFee', 'billingKwh', 'meterAprev', 'meterAcurr', 'meterA',
+        'meterBprev', 'meterBcurr', 'meterB', 'pricePerKwh',
+        'costA', 'costB', 'period', 'readingDate', 'meterDate', 'meterDateNext'
+      ];
+      $vals = [];
+      foreach ($fields as $f) {
+        $vals[] = $mysqli->real_escape_string($new[$f] ?? '');
       }
-      if (!$found) array_unshift($records, $new);
+      $sql = 'INSERT INTO renthouse_records (id,' . implode(',', $fields) . ') VALUES (' . $id . ',\'' . implode('\',\'', $vals) . '\') ON DUPLICATE KEY UPDATE ';
+      $updates = [];
+      foreach ($fields as $f) {
+        $updates[] = $f . '=VALUES(' . $f . ')';
+      }
+      $sql .= implode(',', $updates);
+      $mysqli->query($sql);
+      $count++;
     }
-
-    saveDB($records);
-    echo json_encode(['ok' => true, 'count' => count($records)]);
+    $result = $mysqli->query('SELECT COUNT(*) as cnt FROM renthouse_records');
+    $cnt = $result->fetch_assoc()['cnt'];
+    echo json_encode(['ok' => true, 'count' => (int)$cnt]);
     exit;
   }
 
   if ($action === 'delete') {
-    $id = $input['id'] ?? 0;
-    $records = loadDB();
-    $records = array_values(array_filter($records, fn($r) => $r['id'] != $id));
-    saveDB($records);
-    echo json_encode(['ok' => true]);
-    exit;
-  }
-
-  if ($action === 'clear') {
-    saveDB([]);
+    $id = (int)($input['id'] ?? 0);
+    $mysqli->query('DELETE FROM renthouse_records WHERE id = ' . $id);
     echo json_encode(['ok' => true]);
     exit;
   }
 
   if ($action === 'tenant_save') {
-    file_put_contents($tenantFile, json_encode($input, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    $json = json_encode($input, JSON_UNESCAPED_UNICODE);
+    $esc = $mysqli->real_escape_string($json);
+    $mysqli->query('INSERT INTO renthouse_tenants (id, data) VALUES (1, \'' . $esc . '\') ON DUPLICATE KEY UPDATE data = \'' . $esc . '\'');
     echo json_encode(['ok' => true]);
     exit;
   }
 
   if ($action === 'draft_save') {
-    file_put_contents($draftFile, json_encode($input, JSON_UNESCAPED_UNICODE));
+    $json = json_encode($input, JSON_UNESCAPED_UNICODE);
+    $esc = $mysqli->real_escape_string($json);
+    $mysqli->query('INSERT INTO renthouse_drafts (id, data) VALUES (1, \'' . $esc . '\') ON DUPLICATE KEY UPDATE data = \'' . $esc . '\'');
+    echo json_encode(['ok' => true]);
+    exit;
+  }
+
+  if ($action === 'tenant_log_save') {
+    $unit = $mysqli->real_escape_string($input['unit'] ?? '');
+    $name = $mysqli->real_escape_string($input['name'] ?? '');
+    $idx = (int)($input['idx'] ?? 0);
+    $month = $mysqli->real_escape_string($input['month'] ?? '');
+    $json = json_encode($input['data'] ?? [], JSON_UNESCAPED_UNICODE);
+    $esc = $mysqli->real_escape_string($json);
+    $mysqli->query('INSERT INTO renthouse_tenant_log (unit, tenant_index, tenant_name, data, log_month) VALUES (\'' . $unit . '\', ' . $idx . ', \'' . $name . '\', \'' . $esc . '\', \'' . $month . '\')');
     echo json_encode(['ok' => true]);
     exit;
   }
@@ -98,8 +118,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
   if ($action === 'tenant_list') {
-    if (file_exists($tenantFile)) {
-      echo file_get_contents($tenantFile);
+    $result = $mysqli->query('SELECT data FROM renthouse_tenants WHERE id = 1');
+    if ($row = $result->fetch_assoc()) {
+      echo $row['data'];
     } else {
       echo '{}';
     }
@@ -107,11 +128,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
   }
 
   if ($action === 'draft_load') {
-    if (file_exists($draftFile)) {
-      echo file_get_contents($draftFile);
+    $result = $mysqli->query('SELECT data FROM renthouse_drafts WHERE id = 1');
+    if ($row = $result->fetch_assoc()) {
+      echo $row['data'];
     } else {
       echo '{}';
     }
+    exit;
+  }
+
+  if ($action === 'tenant_log_list') {
+    $month = $_GET['month'] ?? '';
+    $name = $_GET['name'] ?? '';
+    $unit = $_GET['unit'] ?? '';
+    $sql = 'SELECT * FROM renthouse_tenant_log WHERE 1=1';
+    if ($unit) $sql .= ' AND unit = \'' . $mysqli->real_escape_string($unit) . '\'';
+    if ($month) $sql .= ' AND log_month = \'' . $mysqli->real_escape_string($month) . '\'';
+    if ($name) $sql .= ' AND tenant_name LIKE \'%' . $mysqli->real_escape_string($name) . '%\'';
+    $sql .= ' ORDER BY created_at DESC LIMIT 200';
+    $result = $mysqli->query($sql);
+    $rows = [];
+    while ($row = $result->fetch_assoc()) {
+      $row['id'] = (int)$row['id'];
+      $row['tenant_index'] = (int)$row['tenant_index'];
+      $row['data'] = json_decode($row['data'], true);
+      $rows[] = $row;
+    }
+    echo json_encode($rows, JSON_UNESCAPED_UNICODE);
     exit;
   }
 }
