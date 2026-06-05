@@ -114,6 +114,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     echo json_encode(['ok' => true]);
     exit;
   }
+
+  if ($action === 'water_save') {
+    $r = $input;
+    if (empty($r['id'])) $r['id'] = round(microtime(true) * 1000);
+    $id = (int)$r['id'];
+    $fields = ['billMonth','startDate','endDate','totalBill','baseFee','billingKwh','wAprev','wAcurr','wBprev','wBcurr','readDate'];
+    $vals = [];
+    foreach ($fields as $f) { $vals[] = '\'' . $mysqli->real_escape_string($r[$f] ?? '') . '\''; }
+    $sql = 'INSERT INTO renthouse_water_records (id,' . implode(',', $fields) . ') VALUES (' . $id . ',' . implode(',', $vals) . ') ON DUPLICATE KEY UPDATE ';
+    $ups = [];
+    foreach ($fields as $f) { $ups[] = $f . '=VALUES(' . $f . ')'; }
+    $sql .= implode(',', $ups);
+    $mysqli->query($sql);
+    echo json_encode(['ok' => true, 'id' => $id]);
+    exit;
+  }
+
+  if ($action === 'water_delete') {
+    $id = (int)($input['id'] ?? 0);
+    $mysqli->query('DELETE FROM renthouse_water_records WHERE id = ' . $id);
+    echo json_encode(['ok' => true]);
+    exit;
+  }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -152,6 +175,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
       $row['id'] = (int)$row['id'];
       $row['tenant_index'] = (int)$row['tenant_index'];
       $row['data'] = json_decode($row['data'], true);
+      $rows[] = $row;
+    }
+    echo json_encode($rows, JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'water_list') {
+    $result = $mysqli->query('SELECT * FROM renthouse_water_records ORDER BY endDate DESC');
+    $rows = [];
+    while ($row = $result->fetch_assoc()) {
+      foreach ($row as $k => $v) { if (is_numeric($v) && strpos($k,'id')===false) $row[$k] = (float)$v; }
+      $row['id'] = (int)$row['id'];
       $rows[] = $row;
     }
     echo json_encode($rows, JSON_UNESCAPED_UNICODE);
