@@ -315,9 +315,22 @@
    </div>
    <button class="small" onclick="addTenant('B')" style="background:#2E7D32;color:#fff;margin-top:8px;">＋ 新增B戶住戶</button>
    <button class="small green" id="saveBtnB" onclick="saveTenantsUnit('B')" style="margin-top:8px;margin-left:6px;display:none;">💾 儲存B戶</button>
-   <button class="small" id="editBtnB" onclick="toggleEdit('B')" style="margin-top:8px;margin-left:6px;">✏️ 編輯B戶</button>
+    <button class="small" id="editBtnB" onclick="toggleEdit('B')" style="margin-top:8px;margin-left:6px;">✏️ 編輯B戶</button>
    </div>
 </div>
+
+<div class="card" id="cardTenantSearch">
+  <div class="header-bar"><span class="section-title">🔍 房客查詢</span></div>
+  <div style="display:flex;gap:6px;margin-bottom:8px;">
+    <select id="sUnit" onchange="searchTenants()" style="flex:0.5;font-size:13px;padding:8px;"><option value="">全部</option><option value="A">A戶</option><option value="B">B戶</option></select>
+    <input type="text" id="sName" placeholder="姓名" oninput="searchTenants()" style="flex:1;font-size:13px;padding:8px;">
+    <input type="month" id="sMonth" onchange="searchTenants()" style="flex:1;font-size:13px;padding:8px;">
+  </div>
+  <div class="history-wrap"><div class="empty-msg" id="sEmpty">輸入條件即時查詢</div>
+    <table id="sTable" style="display:none;"><thead><tr><th>戶別</th><th>姓名</th><th>身分證</th><th>電話</th><th>簽約</th><th>補助</th><th>租約起</th><th>租約訖</th><th></th></tr></thead><tbody id="sBody"></tbody></table>
+  </div>
+</div>
+
 </div>
 
 <div id="tab-electric" class="tab-content">
@@ -562,7 +575,7 @@
 
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
   <div class="modal" onclick="event.stopPropagation()">
-    <h2>⚡ 電費分攤明細</h2>
+    <h2 id="modalTitle">⚡ 電費分攤明細</h2>
     <div id="modalBody"></div>
     <div style="display:flex;gap:6px;margin-top:10px;">
       <button class="small" onclick="copyRecord()" style="background:#3498db;color:#fff;margin:0;flex:1;">📋 複製</button>
@@ -2166,6 +2179,32 @@ function calcWater() {
   document.getElementById('wRtotal').textContent = total.toFixed(0)+' 元'; document.getElementById('wRcostA').textContent = cA.toFixed(0)+' 元'; document.getElementById('wRcostB').textContent = cB.toFixed(0)+' 元'; document.getElementById('wRtotalCost').textContent = (cA+cB).toFixed(0)+' 元';
 }
 function saveWaterRecord() { showToast('✅ 水費已儲存'); }
+
+function searchTenants() {
+  if (!isNAS) return;
+  var u = document.getElementById('sUnit').value, nm = document.getElementById('sName').value.trim(), mo = document.getElementById('sMonth').value;
+  var url = API + '?action=tenant_log_list';
+  if (u) url += '&unit=' + u;
+  if (nm) url += '&name=' + nm;
+  fetch(url).then(function(r) { return r.json(); }).then(function(rows) {
+    if (mo) rows = rows.filter(function(r) { var d = r.data||{}; return (d.leaseStart||'').startsWith(mo)||(d.leaseEnd||'').startsWith(mo)||(d.moveIn||'').startsWith(mo)||(d.moveOut||'').startsWith(mo); });
+    rows = rows.filter(function(r) { var d = r.data||{}; if (d.isExtSigner && (tenants[r.unit||'A']||[]).some(function(t){return t.isSigner;})) return false; return true; });
+    rows.sort(function(a,b) { return new Date(b.created_at||0) - new Date(a.created_at||0); });
+    var seen = {}; rows = rows.filter(function(r) { var d = r.data||{}; var k = (r.tenant_name||'')+'|'+(d.leaseStart||'')+'|'+(d.leaseEnd||''); if (seen[k]) return false; seen[k]=true; return true; });
+    rows.forEach(function(r) { var live = ((tenants[r.unit||'A']||[]).find(function(t){return t.name===r.tenant_name;})); if (live) r.data = live; });
+    var tb = document.getElementById('sBody'), tbl = document.getElementById('sTable'), em = document.getElementById('sEmpty');
+    tb.innerHTML = '';
+    if (!rows.length) { em.style.display='block'; em.textContent='無符合'; tbl.style.display='none'; return; }
+    em.style.display='none'; tbl.style.display='';
+    rows.forEach(function(r) { var d = r.data||{}, ie = d.isExtSigner;
+      var tr = document.createElement('tr'); tr.style.cursor='pointer';
+      tr.innerHTML = '<td>'+(r.unit||'')+'戶'+(ie?'代表':'')+'</td><td>'+(r.tenant_name||'')+'</td><td>'+(d.id||'')+'</td><td>'+(d.phone||'')+'</td><td>'+(ie?'非住戶代理':(d.isSigner?'是':''))+'</td><td>'+(d.subsidy?'是':'')+'</td><td>'+(d.leaseStart||'')+'</td><td>'+(d.leaseEnd||'')+'</td><td><button class="del-btn" style="color:#4A90D9;" onclick="event.stopPropagation();editFromSearch(\''+(r.unit||'A')+'\','+(r.tenant_index||0)+')">✎</button></td>';
+      tr.onclick = function() { showSearchDetail(r); }; tb.appendChild(tr);
+    });
+  }).catch(function() {});
+}
+function showSearchDetail(r) { var d=r.data||{}; document.getElementById('modalTitle').textContent='住戶-'+(r.tenant_name||''); document.getElementById('modalBody').innerHTML = [['日期',(r.created_at||'').slice(0,10)],['戶別',(r.unit||'')+'戶'],['姓名',r.tenant_name||''],['身分證',d.id||''],['電話',d.phone||''],['簽約',d.isSigner?'是':'否'],['補助',d.subsidy?'是':'否'],['租約起',d.leaseStart||''],['租約訖',d.leaseEnd||'']].map(function(x){return '<div class=\"modal-row\"><span class=\"modal-label\">'+x[0]+'</span><span class=\"modal-value\">'+(x[1]||'--')+'</span></div>';}).join(''); document.getElementById('modalOverlay').classList.add('show'); }
+function editFromSearch(unit, idx) { closeModal(); switchTab('tenant'); tenantLocked[unit]=false; tenantEditIdx[unit]=parseInt(idx); renderTenants(unit); loadFinFields(unit); document.getElementById('editBtn'+unit).style.display='none'; document.getElementById('saveBtn'+unit).style.display=''; }
 </script>
 </body>
 </html>
