@@ -1,296 +1,79 @@
-# 工作日誌 2026-06-04 ~ 06-05 — 租屋 PWA 房客管理系統大改版
+# 工作日誌 2026-06-05 — V2.1 水費+搜尋+修復
 
-## 修改檔案
-- `index.html` — 前端全部邏輯與 UI（~2140行）
-- `api.php` — NAS 後端改 MySQL
-- `sw.js` — Service Worker v3 network-first
-- `AGENTS.md` — 新增專案記憶
-
----
-
-## 一、頁籤修正
-
-### 歷史紀錄外洩
-- **根因**: `tab-electric` 內多一個 `</div>`（line 404），提早關閉頁籤
-- **修正**: 刪除多餘 `</div>`
-
-### 頁籤重整記憶
-- `switchTab()` 寫入 `localStorage.activeTab`
-- 頁面載入時用 `safeLS()` 安全讀取恢復，避免 localStorage 被封鎖時崩潰
+## 版本
+- V1.1: 穩定基礎版
+- V1.11: +水費計算器 +即時財務 +手機滑動
+- V2.1: +房客搜尋(修復定位)
 
 ---
 
-## 二、房客管理核心功能
-
-### A/B 兩戶獨立操作
-- `renderTenants(unit)` 接受可選參數，只重繪指定戶
-- `addTenant(unit)` / `removeTenant(unit, idx)` 只影響該戶
-- 每戶按鈕: `＋ 新增` | `💾 儲存` | `✏️ 編輯`（儲存/編輯互斥顯示）
-- 按鈕置於財務區塊下方
-
-### 鎖定/編輯機制
-- `tenantLocked{A,B}` 預設鎖定，欄位 `disabled`
-- 新增時只解鎖新住戶（`tenantEditIdx`），原有住戶鎖定
-- `toggleEdit()` 解鎖全部住戶
-- `saveTenantsUnit()` 存檔 + 鎖定 + 清除空白名
-- `cleanEmptyTenants()` 過濾空白姓名
-
-### 住戶編號
-- 藍/綠色標籤 `[住戶1]` 顯示於卡片標題前，`flex-shrink:0` 不裁切
+## 關鍵教訓
+### 頁籤結構定位
+- **問題**: 多次因 `</div>` 定位失誤導致結構崩塌，搜尋卡誤入電費頁籤
+- **解法**: 使用獨特標記(id)定位，不依賴模糊的 `</div>` 匹配
+- **正確定位**: `editBtnB` 唯一標記 → 搜尋卡插在 card close 與 tab-tenant close 之間
 
 ---
 
-## 三、完整欄位
+## 死當/崩潰原因分析
+### 1. 多重 `</div>` 匹配失誤（最嚴重）
+- **現象**: 插入 HTML 時用 `</div>\n\n</div>` 當 oldString，檔案中有多處相同組合
+- **結果**: 編輯誤配到錯誤位置，刪除或移動了關鍵的 `</div>`，破壞 DOM 結構
+- **症狀**: 頁面空白、頁籤內容消失、功能出現於錯誤頁籤
+- **修復**: 改用獨特 id（如 `editBtnB`）當錨點，不再用泛泛的 `</div>` 匹配
 
-### 住戶卡片欄位（依序）
-- 姓名（必填，空白儲存時刪除）
-- 身份證字號、電話、Line ID
-- ☑ 簽約人 + ☑ 申請補貼（同行對齊）
-- 通訊地址
-- 戶籍地址（全寬顯示）
-- 租約起訖日（type="date"）
-- 搬入搬離日（type="date"）
-- ☑ 同代表簽約人（住戶一，外部簽約人顯示時出現）
-- ☑ 同住戶一（住戶二+，複製住戶一日期）
+### 2. 未經測試一次大量修改
+- **現象**: 同時改 HTML + CSS + JS，出錯無法定位哪一項導致
+- **結果**: 反覆 git revert 浪費時間
+- **修復**: 改為一次只改一個功能，上傳測試後再改下一個
 
-### 代表簽約人欄位
-- 姓名、身份證、電話、Line ID
-- 通訊地址、戶籍地址（全寬）
-- 租約起訖日
-- ☑ 申請補貼
-- 無搬入搬離（未居住）
+### 3. SW 快取混淆問題診斷
+- **現象**: 檔案已正確上傳但瀏覽器顯示舊版
+- **誤判**: 多次以為是程式碼錯誤，實際是 Service Worker 快取
+- **辨別方法**: 換瀏覽器測試、curl 查看原始回應、比對 MD5
 
-### 顯示邏輯
-- 有住戶簽約人 → 隱藏代表簽約人
-- 無住戶簽約人 → 永遠顯示代表簽約人
-- 空白欄位鎖定時隱藏（`sh()` 函式，簽約人除外）
+### 4. modalTitle 缺 id
+- **現象**: `showSearchDetail` 存取 `getElementById('modalTitle')` 取到 null
+- **影響**: 點擊搜尋結果時才觸發，非頁面載入時，難以排查
+- **修復**: 在 modal h2 加 `id="modalTitle"`
 
----
+### 5. 箭頭函式與舊瀏覽器相容
+- **現象**: 程式碼中有 `=>` 箭頭函式，部分環境不支援
+- **修復**: 改用 `function(){}` 寫法，避免未知崩潰
 
-## 四、財務欄位（每戶獨立）
+### 水費頁籤
+- 完整水費帳單格式: 抄表日、指針數、公共分攤度數、基本費/用水費/代徵費用
+- 本期實用度數 = 本期指針數 − 上期指針數 + 公共分攤度數
+- 計算模式: `依實際住戶人數分攤` / `依實際用水度數分攤`
+- 模式選擇器在右上角，按鈕(新增/編輯)在右下角
+- 編輯/儲存共用按鈕切換，小尺寸(`class="small"`)靠右
 
-| 欄位 | 說明 |
-|------|------|
-| 房租 | number |
-| 車位 | number |
-| 管理費 | number |
-| 實收 | 自動加總，綠色底 |
-| 保證金 | 預設實收×2，可修改 |
-| 備註 | textarea 多行 |
-| 繳款方式 | 年繳/半年繳/季繳/月繳 |
-| 繳款日 | 下拉 1~31 日 |
+### 水費歷史
+- 仿電費: 月份/期間過濾、累計摘要、點選編輯、刪除
+- API: `water_save`, `water_list`, `water_delete`
+- MySQL: `renthouse_water_records` 表
 
-### 繳款日期系統
-- 依租約起訖日 + 繳款方式 + 繳款日 自動計算
-- 橫列顯示，可勾選標記已繳
-- 儲存後只顯示未繳，全部繳清顯示 ✓
-- 編輯模式才可勾選
-- 資料存於 `tenants.finPayDates{A,B}`
+### 即時計算
+- 財務欄位全部改用 `oninput`(非 `onchange`)
+- `updateFinTotal` 結尾呼叫 `calcPayDates` → 每期應繳/實收同步更新
 
-### 儲存機制
-- `loadFinFields()` 頁面載入時回填
-- 值存於 `tenants` 物件（`finRentA`, `finParkingA`, ...）
-- 隨 `persistTenants()` 寫入 localStorage + MySQL
+### 手機滑動
+- CSS `scroll-snap` + swiper 容器
+- `switchTab` 配合 `scrollTo`
+- scroll 事件監聽同步頂部頁籤按鈕
 
 ---
 
-## 五、B戶綠色系
+## 資料庫
+| 表 | 用途 |
+|----|------|
+| renthouse_records | 電費 |
+| renthouse_tenants | 房客(JSON) |
+| renthouse_tenant_log | 房客異動 |
+| renthouse_water_records | 水費 |
+| renthouse_drafts | 電費草稿 |
 
-- 區塊背景 `#f0faf3`
-- 標題左邊框 `#2E7D32`
-- 住戶標籤 `background:#2E7D32`
-- 所有 checkbox `accent-color:#2E7D32`
-- A戶對應藍色 `#4A90D9`
-
----
-
-## 六、自製 Toast 通知
-
-- 底部浮動深色提示框，2 秒自動消失
-- 取代 `alert()`，用於儲存成功訊息
-
----
-
-## 七、CSS 修正
-
-- checkbox 不被全域 `appearance:none` 破壞
-
----
-
-## 八、NAS 後端 MySQL
-
-### 資料表
-| 表名 | 用途 |
-|------|------|
-| `renthouse_records` | 電費紀錄 |
-| `renthouse_tenants` | 房客資料（JSON LONGTEXT） |
-| `renthouse_drafts` | 草稿（JSON LONGTEXT） |
-| `renthouse_tenant_log` | 房客異動紀錄 |
-
-- 連線: `localhost:3306` / `lohastime` / `march_2011`
-- `api.php` 全部 CRUD 改 MySQL
-
-### 異動紀錄邏輯
-- `persistTenants()` 比對 `tenantLogHash`（姓名+租約起訖日）
-- 僅變更時寫入 `renthouse_tenant_log`
-- 支援戶別/姓名/年月交叉查詢
-
----
-
-## 九、Service Worker
-
-- 快取升 v3
-- HTML network-first: 每次拉最新，離線時才用快取
-- `.htaccess` 設 `Cache-Control: no-cache`
-
----
-
-## 十、部署
-
+## 部署
 - `scp index.html api.php sw.js nas:/share/CACHEDEV1_DATA/Web/renthouse/`
-- NAS URL: `https://www.lohastime.com.tw/renthouse/`
-- 上傳bat: `C:\Users\user\Desktop\renthouse\上傳NAS.bat`
-
----
-
-## 待辦
-- [ ] 房客異動紀錄歷史查詢（暫未加回，先前導致crash）
-- [ ] 手機 scroll-snap 頁籤左右滑
-- [ ] 水費/合計頁籤內容
-
----
-
-## 程式架構 & 流程銜接
-
-### 資料流
-```
-使用者輸入 → tenants 物件(in-memory) → persistTenants()
-  ├── localStorage.setItem('renthouseTenants')
-  └── fetch api.php?action=tenant_save → MySQL renthouse_tenants
-       └── fetch api.php?action=tenant_log_save → MySQL renthouse_tenant_log
-```
-
-### 關鍵全域變數
-```
-tenants = { A:[{...}], B:[{...}], extSignerA_name:'', finRentA:'', ... }
-tenantLocked = { A:true, B:true }     // 鎖定狀態
-tenantEditIdx = { A:-1, B:-1 }         // 新增時指定可編輯的index
-isNAS = location.hostname.includes('lohastime.com.tw')
-API   = isNAS ? 'https://.../api.php' : ''
-```
-
-### 頁面初始化流程
-```
-1. HTML 載入
-2. switchTab(safeLS('activeTab','tenant'))  → 恢復頁籤
-3. renderTenants()                          → 繪製兩戶住戶卡
-4. if isNAS: fetch tenant_list → 覆蓋 tenants → renderTenants()
-5. 觸發 renderTenantHistory() (未加回)
-```
-
-### 住戶操作流程
-```
-addTenant('A')
-  → tenants.A.push({...})
-  → tenantLocked.A = false, tenantEditIdx.A = 最新index
-  → renderTenants('A')  → 只重繪A卡, 新住戶可編輯, 原有鎖定
-  → 按鈕切換: 編輯隱藏, 儲存顯示
-
-使用者編輯欄位 → onchange 直接寫入 tenants.A[i].field
-
-toggleEdit('A')
-  → tenantLocked.A = false, tenantEditIdx.A = -1
-  → renderTenants('A')  → 全部可編輯
-  → 按鈕切換: 編輯隱藏, 儲存顯示
-
-saveTenantsUnit('A')
-  → cleanEmptyTenants()     → 過濾空白名
-  → persistTenants()        → 存 localStorage + MySQL + log
-  → tenantLocked.A = true   → 鎖定
-  → renderTenants('A')      → 重繪(鎖定狀態)
-  → loadFinFields('A')      → 回填財務欄位
-  → showToast()             → 提示
-  → 按鈕切換: 編輯顯示, 儲存隱藏
-```
-
-### renderTenants(unit) 內部流程
-```
-1. 回填 extSigner 欄位值 (含subsidy checkbox)
-2. 判斷 hasExtSigner / hasTenantSigner → 控制代表簽約人顯示
-3. 繪製住戶卡片 (姓名,id,電話,line,通訊地址,戶籍地址,日期...)
-4. sh()函式控制空白欄位隱藏(鎖定時)
-5. 日期同步checkbox(同住戶一/同代表簽約人) 對應邏輯
-6. loadFinFields(unit) → 回填財務欄位 + updateFinTotal()
-```
-
-### 財務欄位儲存路徑 (tenants物件)
-```
-A戶: finRentA, finParkingA, finMgmtA, finDepositA, finNoteA
-     finPayMethodA, finPayDayA, finPayDatesA[]
-B戶: finRentB, ...
-```
-
-### 部署指令
-```
-# 修改後上傳
-scp index.html api.php sw.js nas:/share/CACHEDEV1_DATA/Web/renthouse/
-
-# 或執行
-C:\Users\user\Desktop\renthouse\上傳NAS.bat
-```
-
-### 注意事項
-- **不可用箭頭函式** → 改 `function(){}`，避免舊瀏覽器相容問題
-- **inline onclick 中不要用箭頭函式**
-- **JS 每次修改後用 node 驗證語法**: `node -e "..." `
-- **表單控制**: 儲存鈕 id=`saveBtn{A,B}`, 編輯鈕 id=`editBtn{A,B}`
-- **extSignerBody**: parentElement 控制區塊顯示, extBody 控制內容摺疊
-- **checkbox accent-color**: A藍 B綠, 寫在 inline style
-- **safeLS()**: 包裝 localStorage 存取, 避免私密模式崩潰
-- **MySQL 中文注意**: 連線設 `set_charset('utf8')`, 資料表 CHARSET=utf8
-
----
-
-## 電費系統架構
-
-### 資料儲存
-- localStorage key: `renthouseRecords`
-- MySQL table: `renthouse_records` (id, billMonth, startDate, endDate, totalBill, publicElec, baseFee, billingKwh, meterAprev, meterAcurr, meterA, meterBprev, meterBcurr, meterB, pricePerKwh, costA, costB, period, readingDate)
-- 草稿: localStorage `renthouseDraft`, MySQL `renthouse_drafts`
-
-### 電費頁籤結構 (tab-electric)
-```
-主卡片 (mainCard)
-  ├── 台電帳單輸入 (billMonth, startDate~endDate, totalBill, publicElec, baseFee, billingKwh)
-  ├── 分電表輸入 (meterAcurr/prev, meterBcurr/prev, readingDate)
-  ├── 試算結果 (自動計算 costA, costB)
-  ├── 儲存本期記錄
-  ├── 批次輸入卡片 (batchCard)
-  └── 歷史紀錄卡片
-       ├── 月份/期間過濾下拉
-       ├── 歷史表格 (可排序)
-       ├── 匯出CSV, 備份, 還原, 清除
-       └── 點選列 → 彈出明細 modal → 可列印/複製
-```
-
-### 關鍵函式
-- `saveRecord()` → dbSave() → api.php?action=save
-- `dbLoad() / dbSave(records) / dbDelete(id) / dbClear()`
-- `renderHistory()` → 讀取 records, 過濾, 排序, 繪表
-- `renderOverview()` → 分表度數總覽表
-- `calcBoth()` → 計算 A/B 用電度數與費用
-- `updateAvgPrice()` → 每度平均電價
-- `autoMeterFromEnd()` → 從歷史自動帶入上期度數
-- PDF匯入: `importPDF()` → pdf.js + OCR (Tesseract)
-
-### 電費 API
-- GET `?action=list` → SELECT * FROM renthouse_records
-- POST `?action=save` → INSERT/UPDATE
-- POST `?action=delete` → DELETE by id
-- POST `?action=clear` → DELETE all
-
-### 備份機制
-- 每次 save 自動備份到 `renthouse_backups/backup_YYYYMMDD_HHMMSS.json`
-- 可手動匯出CSV、JSON備份
-- 可匯入JSON還原
-
+- `上傳NAS.bat`
+- 備份: `git tag v*.*` + `ssh nas cp` + `mysqldump`
