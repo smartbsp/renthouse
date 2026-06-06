@@ -18,6 +18,20 @@ scp index-dev.html nas:/share/CACHEDEV1_DATA/Web/renthouse-dev/index.html
 ```
 備份:`git tag v*.*` + NAS `/share/CACHEDEV1_DATA/Web/renthouse_backups/v*/`
 
+## Promote 流程(dev → production)
+1. 先備份 production 當前版本:`ssh nas "mkdir -p /share/CACHEDEV1_DATA/Web/renthouse_backups/pre_<ver>_promote_<ts> && cp /share/.../renthouse/{index.html,api.php,sw.js,manifest.json} <DEST>/"`
+2. 本地 `cp index-dev.html index.html`
+3. 升 `sw.js` 的 `CACHE_NAME`(`elec-calc-v<N>` → `v<N+1>`)
+4. 升 index.html 的 `register('sw.js?v=<N>')` 對應數字
+5. `scp index.html sw.js manifest.json icon-192.png icon-512.png` 到 NAS production
+6. `git commit -m "promote V<ver> to production - sw.js cache bumped to v<N+1>"`
+7. 拷貝到 Google Drive `G:\我的雲端硬碟\renthouse_backups\production_v<ver>_promoted_<date>/`
+8. `curl https://www.lohastime.com.tw/renthouse/` 驗證 production 跟本地 byte-for-byte 一致
+
+歷史 promote 紀錄:
+- 2026-06-06 上午:V3.0 promote(commit `8f344c5`,sw cache v4→v5)
+- 2026-06-06 晚上:V3.1 promote(commit `ddaff1e`,sw cache v5→v6)
+
 ---
 
 ## 資料庫 (MySQL: lohastime)

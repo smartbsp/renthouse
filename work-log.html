@@ -48,7 +48,15 @@
 - [ ] 房客 `tenant_log` 寫入(累積到三個 session 了)
 - [ ] 請款報表 PDF 輸出(目前只有列印 / 複製文字)
 - [ ] 多月份累計請款(例如「印 A 戶 115/04~115/06」單)
-- [ ] V3.1 dev 是否 promote 到 production(目前 production V3.0)
+
+### V3.1 promote 到 production(2026-06-06 20:16)
+
+- 流程跟 V3.0 promote 一樣
+- sw.js cache 升 `v5 → v6`,index.html `register('sw.js?v=6')`
+- pre-promote 備份在 `renthouse_backups/pre_v3.1_promote_20260606_201556/`
+- Git commit `ddaff1e promote V3.1 to production - sw.js cache bumped to v6`
+- Google Drive 同步在 `production_v3.1_promoted_20260606/`
+- 驗證:NAS 跟本地 byte-for-byte 一致(203310 bytes)
 
 ---
 
