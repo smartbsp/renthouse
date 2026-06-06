@@ -81,6 +81,10 @@
     min-height: 44px;
   }
   button:active { transform: scale(0.97); opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  button:disabled:active { transform: none; opacity: 0.4; }
+  /* 編輯中的紀錄列高亮 */
+  tr.editing-row td { background: #fef2f2 !important; border-bottom: 2px solid #dc2626 !important; font-weight: 700; color: #7f1d1d !important; }
   button.primary { background: #4A90D9; color: #fff; box-shadow: 0 2px 6px rgba(74,144,217,0.2); }
   button.secondary { background: #f1f5f9; color: #475569; }
   button.green { background: #22c55e; color: #fff; box-shadow: 0 2px 6px rgba(34,197,94,0.2); }
@@ -342,9 +346,6 @@
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <div class="section-title" style="margin:0;border:none;padding-left:0;">📋 台電帳單</div>
     <button class="small" onclick="clearForm()" style="background:#4A90D9;color:#fff;margin:0;">＋ 新增</button>
-    <button class="small" onclick="document.getElementById('pdfInput').click()" style="background:#e67e22;color:#fff;margin:0;">📄 匯入PDF</button>
-    <button class="small" onclick="pasteBillText()" style="background:#8e44ad;color:#fff;margin:0;">📋 貼上</button>
-    <input type="file" id="pdfInput" accept=".pdf" onchange="importPDF(event)" style="display:none;">
   </div>
   <div class="row">
     <div class="col"><label>帳單月份</label><input type="text" id="billMonth" placeholder="" readonly></div>
@@ -373,66 +374,55 @@
   </div>
   <div class="meter-hint hint-left" id="avgPriceHint"></div>
 
-  <div style="display:flex;justify-content:space-between;align-items:center;">
-    <div class="section-title" style="margin:0;border:none;padding-left:0;">📊 分電表</div>
-    <button class="small" onclick="toggleMeterMode()" style="background:#6366f1;color:#fff;margin:0;font-size:11px;" id="meterModeBtn">條列</button>
-  </div>
-  <div id="meterCard"><div class="meter-area meter-area-a">
-    <div class="meter-area-title" style="color:#4A6FA5;">11F-1（戶A）</div>
-    <div class="row">
-      <div class="col"><label>上期分表度數</label><input type="number" id="meterAprev" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
-      <div class="col"><label>本期分表度數</label><input type="number" id="meterAcurr" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
-    </div>
-    <div style="font-size:13px;color:#888;text-align:right;min-height:18px;" id="meterAdisplay"></div>
-  </div>
-  <div class="meter-area meter-area-b">
-    <div class="meter-area-title" style="color:#2E7D32;">11F-2（戶B）</div>
-    <div class="row">
-      <div class="col"><label>上期分表度數</label><input type="number" id="meterBprev" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
-      <div class="col"><label>本期分表度數</label><input type="number" id="meterBcurr" step="0.1" inputmode="decimal" oninput="calcBoth()"></div>
-    </div>
-    <div style="font-size:13px;color:#888;text-align:right;min-height:18px;" id="meterBdisplay"></div>
-  </div>
-  <div class="row">
-    <div class="col"><label>戶A 用電度數 (自動)</label><input type="number" id="meterA" step="0.1" readonly></div>
-    <div class="col"><label>戶B 用電度數 (自動)</label><input type="number" id="meterB" step="0.1" readonly></div>
-  </div></div>
-  <div id="meterList" style="display:none;">
-    <table style="table-layout:fixed;font-size:13px;">
-      <thead><tr><th></th><th>戶A</th><th>戶B</th><th style="background:#eef2ff;color:#4A90D9;">合計</th></tr></thead>
+  <div class="section-title" style="margin:0 0 6px;border:none;padding-left:0;">📊 分電表</div>
+  <div id="meterTable" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <table style="table-layout:fixed;font-size:13px;width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="background:#f8fafc;">
+          <th style="padding:8px 4px;font-size:11px;color:#64748b;width:18%;text-align:right;"></th>
+          <th style="padding:8px 4px;font-size:12px;color:#4A6FA5;width:27%;background:#f5f8ff;">11F-1 戶A</th>
+          <th style="padding:8px 4px;font-size:12px;color:#2E7D32;width:27%;background:#f2faf5;">11F-2 戶B</th>
+          <th style="padding:8px 4px;font-size:12px;color:#4A90D9;background:#eef2ff;width:28%;">合計</th>
+        </tr>
+      </thead>
       <tbody>
-        <tr><td style="text-align:left;font-weight:600;">上期</td>
-          <td><input type="number" id="ml_aprev" step="0.1" inputmode="decimal" oninput="calcBothList()" style="font-size:13px;padding:6px;"></td>
-          <td><input type="number" id="ml_bprev" step="0.1" inputmode="decimal" oninput="calcBothList()" style="font-size:13px;padding:6px;"></td>
-          <td><input type="number" id="ml_prevSum" readonly style="font-size:13px;padding:6px;background:#eef2ff;font-weight:600;"></td></tr>
-        <tr><td style="text-align:left;font-weight:600;">本期</td>
-          <td><input type="number" id="ml_acurr" step="0.1" inputmode="decimal" oninput="calcBothList()" style="font-size:13px;padding:6px;"></td>
-          <td><input type="number" id="ml_bcurr" step="0.1" inputmode="decimal" oninput="calcBothList()" style="font-size:13px;padding:6px;"></td>
-          <td><input type="number" id="ml_currSum" readonly style="font-size:13px;padding:6px;background:#eef2ff;font-weight:600;"></td></tr>
-        <tr style="background:#f0fdf4;"><td style="text-align:left;font-weight:700;color:#166534;">用電</td>
-          <td><input type="number" id="ml_ausage" readonly style="font-size:13px;padding:6px;background:#f0fdf4;font-weight:600;"></td>
-          <td><input type="number" id="ml_busage" readonly style="font-size:13px;padding:6px;background:#f0fdf4;font-weight:600;"></td>
-          <td><input type="number" id="ml_total" readonly style="font-size:13px;padding:6px;background:#dcfce7;font-weight:700;color:#166534;"></td></tr>
-        <tr style="background:#fff7ed;font-size:12px;">
-          <td style="text-align:left;font-weight:600;color:#c2410c;">核對</td>
-          <td colspan="2" style="text-align:right;color:#64748b;">帳單計費 <b id="ml_kwhBill">0</b> − 分表 <b id="ml_kwhMeter">0</b> ＝</td>
-          <td style="color:#c2410c;font-weight:700;" id="ml_kwhDiff">0</td></tr>
+        <tr>
+          <td style="text-align:right;font-weight:600;color:#475569;font-size:11px;padding:4px 6px;background:#f8fafc;">上期分表</td>
+          <td style="padding:3px;"><input type="number" id="meterAprev" step="0.1" inputmode="decimal" oninput="calcBoth()" style="font-size:13px;padding:7px;text-align:right;width:100%;"></td>
+          <td style="padding:3px;"><input type="number" id="meterBprev" step="0.1" inputmode="decimal" oninput="calcBoth()" style="font-size:13px;padding:7px;text-align:right;width:100%;"></td>
+          <td style="padding:3px;"><input type="number" id="prevSum" readonly style="font-size:13px;padding:7px;background:#eef2ff;font-weight:600;text-align:right;width:100%;"></td>
+        </tr>
+        <tr>
+          <td style="text-align:right;font-weight:600;color:#475569;font-size:11px;padding:4px 6px;background:#f8fafc;">本期分表</td>
+          <td style="padding:3px;"><input type="number" id="meterAcurr" step="0.1" inputmode="decimal" oninput="calcBoth()" style="font-size:13px;padding:7px;text-align:right;width:100%;"></td>
+          <td style="padding:3px;"><input type="number" id="meterBcurr" step="0.1" inputmode="decimal" oninput="calcBoth()" style="font-size:13px;padding:7px;text-align:right;width:100%;"></td>
+          <td style="padding:3px;"><input type="number" id="currSum" readonly style="font-size:13px;padding:7px;background:#eef2ff;font-weight:600;text-align:right;width:100%;"></td>
+        </tr>
+        <tr style="background:#f0fdf4;">
+          <td style="text-align:right;font-weight:700;color:#166534;font-size:11px;padding:4px 6px;background:#dcfce7;">用電度數</td>
+          <td style="padding:3px;"><input type="number" id="meterA" step="0.1" readonly style="font-size:14px;padding:7px;background:#f0fdf4;font-weight:700;color:#166534;text-align:right;width:100%;"></td>
+          <td style="padding:3px;"><input type="number" id="meterB" step="0.1" readonly style="font-size:14px;padding:7px;background:#f0fdf4;font-weight:700;color:#166534;text-align:right;width:100%;"></td>
+          <td style="padding:3px;"><input type="number" id="totalKwh" step="0.1" readonly style="font-size:14px;padding:7px;background:#dcfce7;font-weight:800;color:#166534;text-align:right;width:100%;"></td>
+        </tr>
+        <tr style="background:#fff7ed;">
+          <td style="text-align:right;font-weight:600;color:#c2410c;font-size:11px;padding:4px 6px;background:#ffedd5;">對帳 ⇨ 估算公電</td>
+          <td colspan="2" style="text-align:center;color:#475569;padding:6px;font-size:11px;">帳單 <b id="billKwhDisp" style="color:#1e293b;">0</b> − 分表 <b id="meterKwhDisp" style="color:#1e293b;">0</b> ＝</td>
+          <td style="padding:3px;"><input type="number" id="estPublicKwh" step="0.1" readonly placeholder="差" style="font-size:13px;padding:7px;background:#fff7ed;color:#c2410c;font-weight:700;text-align:right;width:100%;"></td>
+        </tr>
       </tbody>
     </table>
-    <div style="font-size:12px;color:#64748b;margin-top:8px;font-weight:600;">📋 歷史總覽</div>
-    <div style="max-height:280px;overflow-y:auto;">
-      <table style="table-layout:fixed;font-size:10px;width:100%;" id="historyOverview">
-        <thead><tr>
-          <th>月份</th><th>A上期</th><th>A本期</th><th>A用電</th>
-          <th>B上期</th><th>B本期</th><th>B用電</th>
-          <th style="background:#eef2ff;">合計</th><th style="background:#fff7ed;">公電</th>
-        </tr></thead>
-        <tbody><tr><td colspan="9" style="color:#cbd5e1;">尚無紀錄</td></tr></tbody>
-      </table>
   </div>
-  <div class="row">
-    <div class="col"><label>總用電度數</label><input type="number" id="totalKwh" step="0.1" readonly></div>
-    <div class="col"><label>估算公電度數</label><input type="number" id="estPublicKwh" step="0.1" readonly placeholder="計費－總用電"></div>
+
+  <div style="font-size:12px;color:#64748b;margin-top:12px;font-weight:600;">📋 歷史總覽 <span style="font-weight:400;color:#94a3b8;font-size:10px;">(顯示 6 期,其餘可上下捲動)</span></div>
+  <div style="max-height:180px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;margin-top:4px;">
+    <table style="table-layout:fixed;font-size:10px;width:100%;" id="historyOverview">
+      <thead><tr>
+        <th>月份</th><th>A上期</th><th>A本期</th><th>A用電</th>
+        <th>B上期</th><th>B本期</th><th>B用電</th>
+        <th style="background:#eef2ff;">合計</th><th style="background:#fff7ed;">公電</th>
+      </tr></thead>
+      <tbody><tr><td colspan="9" style="color:#cbd5e1;">尚無紀錄</td></tr></tbody>
+    </table>
   </div>
 
   <div style="display:flex;gap:6px;margin-top:4px;">
@@ -447,6 +437,10 @@
 
   <div class="result" id="result">
     <div class="section-title">📄 試算結果</div>
+    <div style="background:#fefce8;border-radius:8px;padding:8px 10px;margin-bottom:8px;border:1px solid #fde68a;">
+      <div style="font-size:11px;color:#a16207;font-weight:700;margin-bottom:4px;">📐 計算方式</div>
+      <div id="r_basis" style="font-size:12px;font-weight:600;color:#854d0e;line-height:1.6;white-space:pre-line;"></div>
+    </div>
     <div class="result-row"><span class="result-label">計費期間</span><span id="r_period"></span></div>
     <div class="result-row"><span class="result-label">總電費</span><span id="r_totalBill"></span></div>
     <div class="result-row"><span class="result-label">公電 + 底度</span><span id="r_publicShare"></span></div>
@@ -485,7 +479,6 @@
           <tr><td colspan="11" style="color:#b0b9c4;padding:20px;">點「＋ 新增列」開始輸入</td></tr>
         </tbody>
       </table>
-    </div>
     </div>
     <div class="btn-row">
       <button class="green" onclick="saveBatch()">💾 批次儲存</button>
@@ -530,10 +523,6 @@
   <div style="text-align:right;margin-top:8px;display:flex;gap:6px;justify-content:flex-end;">
     <button class="small" onclick="printReport()" style="background:#e74c3c;color:#fff;margin:0;">🖨️ 列印</button>
     <button class="small" onclick="exportReport()" style="background:#f39c12;color:#fff;margin:0;">📄 CSV</button>
-    <button class="small" onclick="exportBackup()" style="background:#27ae60;color:#fff;margin:0;">💾 備份</button>
-    <button class="small" onclick="document.getElementById('restoreFile').click()" style="background:#8e44ad;color:#fff;margin:0;">📥 還原</button>
-    <input type="file" id="restoreFile" accept=".json" onchange="importBackup(event)" style="display:none;">
-    <button class="small danger" onclick="clearHistory()">清除全部紀錄</button>
   </div>
 </div>
 
@@ -542,32 +531,108 @@
 <div class="card">
   <h1>💧 水費分攤</h1>
   <p class="subtitle">兩戶用水分攤計算</p>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px;">
     <div class="section-title" style="margin:0;border:none;padding-left:0;">📋 水費帳單</div>
-    <select id="wMode" onchange="calcWater()" style="font-size:12px;padding:4px 8px;border-radius:6px;width:auto;"><option value="meter">依度數</option><option value="head">依人頭</option></select>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span id="wHeadcountHint" style="font-size:11px;color:#64748b;white-space:nowrap;"></span>
+      <select id="wMode" onchange="onWaterModeChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:6px;width:auto;"><option value="head">依戶別人數</option><option value="meter">依用水度數</option></select>
+    </div>
   </div>
   <div class="row"><div class="col"><label>帳單月份</label><input type="text" id="wBillMonth" readonly></div><div class="col"></div></div>
-  <div class="row"><div class="col"><label>本期抄表日</label><input type="date" id="wReadDate" onchange="autoWaterNext()"></div><div class="col"><label>下期抄表日</label><input type="date" id="wReadDateNext"></div></div>
+  <div class="row"><div class="col"><label>計費起日</label><input type="date" id="wStartDate" onchange="autoWaterEnd()"></div><div class="col"><label>計費迄日</label><input type="date" id="wEndDate" onchange="autoWaterBillMonth();autoWaterMeterFromEnd()"></div></div>
+  <div class="row"><div class="col"><label>本期抄表日</label><input type="date" id="wReadDate" onchange="autoWaterNext()"></div><div class="col"><label>下期抄表日</label><input type="date" id="wReadDateNext" style="border-color:#e74c3c;background:#fff5f5;font-weight:600;"></div></div>
   <div class="row"><div class="col"><label>上期指針數</label><input type="number" id="wMeterPrev" oninput="calcWater()"></div><div class="col"><label>本期指針數</label><input type="number" id="wMeterCurr" oninput="calcWater()"></div></div>
-  <div class="row"><div class="col"><label>分攤度數</label><input type="number" step="0.01" id="wSubMeter" oninput="calcWater()" placeholder="0"></div><div class="col"><label>用水度數</label><input id="wUsage" readonly style="background:#f1f5f9;font-weight:500;"></div></div>
-  <div class="row"><div class="col"><label>基本費</label><input type="number" step="0.01" id="wBaseFee" oninput="calcWater()" placeholder="0"></div><div class="col"><label>用水費</label><input type="number" step="0.01" id="wWaterFee" oninput="calcWater()" placeholder="0"></div></div>
-  <div class="row"><div class="col"><label>代徵費用</label><input type="number" step="0.01" id="wExtraFee" oninput="calcWater()" placeholder="0"></div><div class="col"><label>應繳總計</label><input id="wTotalBill" readonly style="background:#f1f5f9;font-weight:700;"></div></div>
+  <div class="row"><div class="col"><label>公共分攤度數</label><input type="number" step="0.01" id="wSubMeter" oninput="calcWater()" placeholder="0"></div><div class="col"><label>用水度數 <span style="font-weight:400;color:#94a3b8;font-size:10px;">本期−上期+公共</span></label><input id="wUsage" readonly style="background:#f1f5f9;font-weight:500;"></div></div>
+  <div class="row"><div class="col"><label>基本費</label><input type="number" step="0.01" id="wBaseFee" oninput="calcWater()" placeholder="0" value="71.4"></div><div class="col"><label>用水費</label><input type="number" step="0.01" id="wWaterFee" oninput="calcWater()" placeholder="0"></div></div>
+  <div class="row"><div class="col"><label>代徵費用</label><input type="number" step="0.01" id="wExtraFee" oninput="calcWater()" placeholder="0" value="24"></div><div class="col"><label>應繳總計</label><input id="wTotalBill" readonly style="background:#f1f5f9;font-weight:700;"></div></div>
   <hr>
-  <div class="section-title">📊 A/B 分表</div>
-  <div class="meter-area meter-area-a"><div class="meter-area-title">11F-1（A戶）</div>
-    <div class="row"><div class="col"><label>上期</label><input type="number" step="0.1" id="wAprev" oninput="calcWater()"></div><div class="col"><label>本期</label><input type="number" step="0.1" id="wAcurr" oninput="calcWater()"></div></div>
-    <div class="meter-hint" id="wAhint"></div></div>
-  <div class="meter-area meter-area-b"><div class="meter-area-title">11F-2（B戶）</div>
-    <div class="row"><div class="col"><label>上期</label><input type="number" step="0.1" id="wBprev" oninput="calcWater()"></div><div class="col"><label>本期</label><input type="number" step="0.1" id="wBcurr" oninput="calcWater()"></div></div>
-    <div class="meter-hint" id="wBhint"></div></div>
+  <div id="wMeterSection">
+    <div class="section-title">📊 分表(B 戶實測 / A 戶推算)</div>
+    <div class="meter-area meter-area-b"><div class="meter-area-title">11F-2（B戶) 子表讀數</div>
+      <div class="row"><div class="col"><label>上期</label><input type="number" step="0.1" id="wBprev" oninput="calcWater()"></div><div class="col"><label>本期</label><input type="number" step="0.1" id="wBcurr" oninput="calcWater()"></div></div>
+      <div class="meter-hint" id="wBhint"></div></div>
+    <div class="meter-area meter-area-a"><div class="meter-area-title">11F-1（A戶) 自動推算</div>
+      <div class="row"><div class="col"><label>A 用水度數</label><input id="wAusageDisplay" readonly style="background:#e0e7ff;font-weight:700;color:#1e3a8a;"></div><div class="col"></div></div>
+      <div class="meter-hint" id="wAhint" style="text-align:left;color:#475569;">A = 總用水度數 − B 用水</div></div>
+    <input type="hidden" id="wAprev" value="0">
+    <input type="hidden" id="wAcurr" value="0">
+  </div>
   <div class="result" id="wResult">
+    <div style="background:#fefce8;border-radius:8px;padding:8px 10px;margin-bottom:8px;border:1px solid #fde68a;">
+      <div style="font-size:11px;color:#a16207;font-weight:700;margin-bottom:4px;">📐 計算方式</div>
+      <div id="wRbasis" style="font-size:12px;font-weight:600;color:#854d0e;line-height:1.6;white-space:pre-line;"></div>
+    </div>
     <div class="result-row"><span class="result-label">總水費</span><span id="wRtotal"></span></div>
     <div class="result-row"><span class="result-label">A戶水費</span><span id="wRcostA"></span></div>
     <div class="result-row"><span class="result-label">B戶水費</span><span id="wRcostB"></span></div>
     <div class="result-row total"><span class="result-label">合計</span><span id="wRtotalCost"></span></div>
   </div>
-  <button class="green" onclick="saveWaterRecord()" style="margin-top:10px;">💾 儲存本期紀錄</button>
+  <div class="btn-row" style="margin-top:10px;">
+    <button class="green" id="saveWaterBtn" onclick="saveWaterRecord()" disabled>➕ 新增</button>
+    <button class="primary" id="saveAsNewWaterBtn" onclick="saveAsNewWaterRecord()" style="display:none;">➕ 另存新筆</button>
+    <button class="danger" id="deleteWaterBtn" onclick="deleteCurrentWaterRecord()" style="display:none;">🗑️ 刪除</button>
+    <button class="secondary" onclick="clearWaterForm()">🆕 清除</button>
+  </div>
 </div>
+
+<div class="modal-overlay" id="waterDupOverlay" onclick="closeWaterDup(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:380px;">
+    <h2 style="color:#dc2626;">⚠️ 月份已有紀錄</h2>
+    <div id="waterDupBody" style="font-size:13px;color:#475569;line-height:1.7;padding:4px 0 8px;"></div>
+    <div class="btn-row" style="margin-top:12px;">
+      <button class="danger" onclick="confirmWaterDup(true)" style="flex:1;">覆寫舊紀錄</button>
+      <button class="secondary" onclick="confirmWaterDup(false)" style="flex:1;">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmOverlay" onclick="closeConfirm(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:380px;">
+    <h2 id="confirmTitle" style="color:#dc2626;">⚠️ 確認</h2>
+    <div id="confirmBody" style="font-size:13px;color:#475569;line-height:1.7;padding:4px 0 8px;"></div>
+    <div class="btn-row" style="margin-top:12px;">
+      <button id="confirmOkBtn" class="danger" style="flex:1;">確定</button>
+      <button class="secondary" onclick="closeConfirm()" style="flex:1;">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="card" id="cardWaterHistory">
+  <div class="header-bar"><span class="section-title">📜 水費歷史</span></div>
+  <div class="total-summary" id="waterTotalSummary" style="display:none;"></div>
+  <div id="waterFilterBar" style="background:#f8fafc;border-radius:12px;padding:8px 10px;margin-bottom:10px;border:1px solid #e2e8f0;">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <button class="small" onclick="navWaterYear(-1)" style="background:#fff;color:#475569;border:1px solid #e2e8f0;padding:6px 10px;font-size:13px;margin:0;min-height:32px;width:auto;">◀</button>
+      <select id="waterYearSel" onchange="setWaterYear(this.value)" style="flex:1;text-align:center;text-align-last:center;font-weight:700;color:#334155;font-size:14px;background-color:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:6px 28px 6px 8px;cursor:pointer;min-height:32px;appearance:auto;-webkit-appearance:menulist;">
+        <option value="">全部年份 ▼</option>
+      </select>
+      <button class="small" onclick="navWaterYear(1)" style="background:#fff;color:#475569;border:1px solid #e2e8f0;padding:6px 10px;font-size:13px;margin:0;min-height:32px;width:auto;">▶</button>
+      <button class="small" onclick="clearWaterFilters()" style="background:#4A90D9;color:#fff;padding:6px 10px;font-size:12px;margin:0;min-height:32px;width:auto;">全部</button>
+    </div>
+    <div id="waterMonthGrid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;"></div>
+  </div>
+  <div class="history-wrap" id="waterHistoryWrap">
+    <div class="empty-msg" id="waterEmptyMsg">尚無水費紀錄<br><span style="font-size:12px;color:#bbb;">填寫上方表單按「儲存本期紀錄」</span></div>
+    <table id="waterHistoryTable" style="display:none;">
+      <thead>
+        <tr>
+          <th style="width:9%;">月份</th>
+          <th style="width:12%;">抄表日</th>
+          <th style="width:6%;">模式</th>
+          <th style="width:9%;">總水費</th>
+          <th style="width:7%;">A度</th>
+          <th style="width:7%;">B度</th>
+          <th style="width:10%;">A應繳</th>
+          <th style="width:10%;">B應繳</th>
+          <th style="width:7%;" title="已結算收款">已收</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="waterHistoryBody"></tbody>
+    </table>
+  </div>
+</div>
+
 </div>
 <div id="tab-summary" class="tab-content"></div>
 </div>
@@ -585,14 +650,16 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js'"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script>
-if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-</script>
 <script>
 const isNAS = location.hostname.includes('lohastime.com.tw');
 const API = isNAS ? 'https://lohastime.com.tw/renthouse/api.php' : '';
+
+// === 早期初始化:水費 state 必須在 switchTab() 第一次呼叫前就存在,
+// 否則 resetWaterFilters → renderWaterHistory 會踩到 undefined.length 把整個 script eval 中斷 ===
+var waterRecords = [];
+var editingWaterId = null;
+var currentWaterYear = '';
+var currentWaterMonth = '';
 
 function dbLoad() {
   return new Promise(resolve => {
@@ -622,12 +689,6 @@ function dbDelete(id) {
   }
 }
 
-function dbClear() {
-  if (API) {
-    fetch(API + '?action=clear', { method: 'POST' }).catch(() => {});
-  }
-}
-
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
   document.querySelectorAll('.tab-content').forEach(function(c){ c.classList.remove('active'); });
@@ -635,6 +696,7 @@ function switchTab(tab) {
   document.querySelector('.tab-btn[onclick*=\"' + tab + '\"]').classList.add('active');
   try { localStorage.setItem('activeTab', tab); } catch(e) {}
   if (tab === 'electric') renderOverview();
+  if (tab === 'water' && typeof resetWaterFilters === 'function') resetWaterFilters();
   if (window.innerWidth < 768) { var s = document.querySelector('.tab-swiper'); if (s) { var t = document.getElementById('tab-'+tab); s.scrollTo({ left: t.offsetLeft, behavior: 'smooth' }); } }
 }
 
@@ -643,6 +705,7 @@ switchTab(safeLS('activeTab','tenant'));
 
 (function() {
   var s = document.querySelector('.tab-swiper');
+  var prevActive = null;
   if (s) {
     s.addEventListener('scroll', function() {
       var tabs = ['tenant','electric','water','summary'];
@@ -656,6 +719,11 @@ switchTab(safeLS('activeTab','tenant'));
       var btn = document.querySelector('.tab-btn[onclick*=\"'+active+'\"]');
       if (btn) btn.classList.add('active');
       try { localStorage.setItem('activeTab', active); } catch(e) {}
+      // 進入水費 tab 時清空篩選回預設
+      if (active === 'water' && prevActive !== 'water' && typeof resetWaterFilters === 'function') {
+        resetWaterFilters();
+      }
+      prevActive = active;
     }, { passive: true });
   }
 })();
@@ -785,6 +853,49 @@ function persistTenants() {
 function saveTenants() { cleanEmptyTenants(); persistTenants(); tenantLocked = { A:true, B:true }; renderTenants(); showToast('✅ 房客資料已儲存'); }
 
 function showToast(msg) { var t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.add('show'); clearTimeout(t._timeout); t._timeout = setTimeout(function() { t.classList.remove('show'); }, 2000); }
+
+// 西元 yyyy-mm-dd → 民國 y/m/d(去掉前導零)
+function fmtMinguo(isoDate) {
+  if (!isoDate) return '--';
+  var parts = String(isoDate).split('-');
+  if (parts.length < 3) return isoDate;
+  var y = parseInt(parts[0], 10) - 1911;
+  if (isNaN(y)) return isoDate;
+  return y + '/' + parseInt(parts[1], 10) + '/' + parseInt(parts[2], 10);
+}
+
+// === 自製 confirm modal(取代 native confirm)===
+function customConfirm(opts) {
+  opts = opts || {};
+  var titleEl = document.getElementById('confirmTitle');
+  var bodyEl = document.getElementById('confirmBody');
+  var okBtn = document.getElementById('confirmOkBtn');
+  if (!titleEl || !bodyEl || !okBtn) {
+    // fallback:DOM 未就緒就退回 native confirm
+    if (window.confirm(opts.message || opts.title || '確定?')) {
+      if (typeof opts.onConfirm === 'function') opts.onConfirm();
+    }
+    return;
+  }
+  titleEl.textContent = opts.title || '⚠️ 確認';
+  titleEl.style.color = opts.titleColor || '#dc2626';
+  bodyEl.innerHTML = opts.message || '';
+  okBtn.textContent = opts.okText || '確定';
+  okBtn.className = opts.okClass || 'danger';
+  okBtn.onclick = function() {
+    closeConfirm();
+    if (typeof opts.onConfirm === 'function') opts.onConfirm();
+  };
+  document.getElementById('confirmOverlay').classList.add('show');
+}
+
+function closeConfirm(e) {
+  if (e && e.target !== e.currentTarget) return;
+  var overlay = document.getElementById('confirmOverlay');
+  if (overlay) overlay.classList.remove('show');
+  var okBtn = document.getElementById('confirmOkBtn');
+  if (okBtn) okBtn.onclick = null;
+}
 
 function calcPayDates(unit) {
   var method = document.getElementById('fin'+unit+'_payMethod').value;
@@ -949,20 +1060,36 @@ function calcBothList() {
 }
 
 function calcBoth() {
-  const usageA = calcUsage(document.getElementById('meterAprev').value, document.getElementById('meterAcurr').value);
-  const usageB = calcUsage(document.getElementById('meterBprev').value, document.getElementById('meterBcurr').value);
+  const pa = parseFloat(document.getElementById('meterAprev').value) || 0;
+  const ca = parseFloat(document.getElementById('meterAcurr').value) || 0;
+  const pb = parseFloat(document.getElementById('meterBprev').value) || 0;
+  const cb = parseFloat(document.getElementById('meterBcurr').value) || 0;
+
+  const usageA = ca >= pa && ca > 0 ? ca - pa : 0;
+  const usageB = cb >= pb && cb > 0 ? cb - pb : 0;
+  const total = usageA + usageB;
+  const prevSum = pa + pb;
+  const currSum = ca + cb;
+  const billingKwh = parseFloat(document.getElementById('billingKwh').value) || 0;
+  const estPublic = billingKwh - total;
 
   document.getElementById('meterA').value = usageA > 0 ? usageA.toFixed(1) : '';
   document.getElementById('meterB').value = usageB > 0 ? usageB.toFixed(1) : '';
-  document.getElementById('meterAdisplay').textContent = usageA > 0 ? '11F-1 用電：' + usageA.toFixed(1) + ' 度' : '';
-  document.getElementById('meterBdisplay').textContent = usageB > 0 ? '11F-2 用電：' + usageB.toFixed(1) + ' 度' : '';
-
-  const total = usageA + usageB;
   document.getElementById('totalKwh').value = total > 0 ? total.toFixed(1) : '';
-
-  const billingKwh = parseFloat(document.getElementById('billingKwh').value) || 0;
-  const estPublic = billingKwh - total;
+  document.getElementById('prevSum').value = prevSum > 0 ? prevSum.toFixed(1) : '';
+  document.getElementById('currSum').value = currSum > 0 ? currSum.toFixed(1) : '';
   document.getElementById('estPublicKwh').value = (billingKwh > 0 && total > 0) ? estPublic.toFixed(1) : '';
+
+  const billDisp = document.getElementById('billKwhDisp');
+  const meterDisp = document.getElementById('meterKwhDisp');
+  if (billDisp) billDisp.textContent = billingKwh.toFixed(1);
+  if (meterDisp) meterDisp.textContent = total.toFixed(1);
+
+  // legacy 雙欄式的 hint(若舊版 DOM 還在的話 guard 一下,不會 crash)
+  const ad = document.getElementById('meterAdisplay');
+  const bd = document.getElementById('meterBdisplay');
+  if (ad) ad.textContent = usageA > 0 ? '11F-1 用電：' + usageA.toFixed(1) + ' 度' : '';
+  if (bd) bd.textContent = usageB > 0 ? '11F-2 用電：' + usageB.toFixed(1) + ' 度' : '';
 
   updateCalcBtn();
 }
@@ -1040,8 +1167,21 @@ function calculate() {
   document.getElementById('r_costB').textContent = costB.toFixed(0) + ' 元';
   document.getElementById('r_total').textContent = (costA + costB).toFixed(0) + ' 元';
 
+  // 📐 計算方式 banner
+  var basisEl = document.getElementById('r_basis');
+  if (basisEl) {
+    var basis = '公電 ' + publicElec.toFixed(0) + ' + 底度 ' + baseFee.toFixed(0)
+      + ' = 公電總分攤 ' + publicTotal.toFixed(0) + ' 元 → 每戶 ' + publicPerHouse.toFixed(1) + ' 元'
+      + '\n扣除公電 = ' + totalBill.toFixed(0) + ' − ' + publicTotal.toFixed(0) + ' = ' + netBill.toFixed(0) + ' 元'
+      + '\n每度單價 = ' + netBill.toFixed(0) + ' ÷ ' + totalKwh.toFixed(1) + ' 度 = ' + pricePerKwh.toFixed(3) + ' 元/度'
+      + '\n────────────'
+      + '\nA戶 = ' + meterA.toFixed(1) + ' × ' + pricePerKwh.toFixed(3) + ' + ' + publicPerHouse.toFixed(1) + ' = ' + costA.toFixed(0) + ' 元'
+      + '\nB戶 = ' + meterB.toFixed(1) + ' × ' + pricePerKwh.toFixed(3) + ' + ' + publicPerHouse.toFixed(1) + ' = ' + costB.toFixed(0) + ' 元';
+    basisEl.textContent = basis;
+  }
+
   document.getElementById('result').classList.add('show');
-  document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!arguments[0]) document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function copyResult() {
@@ -1142,188 +1282,6 @@ function printCurrent() {
   w.document.write(html);
   w.document.close();
   setTimeout(() => w.print(), 300);
-}
-
-function pasteBillText() {
-  navigator.clipboard.readText().then(text => {
-    if (text && text.length > 10) {
-      parseBillText(text);
-    } else {
-      const t = prompt('請貼上電費明細文字內容：');
-      if (t) parseBillText(t);
-    }
-  }).catch(() => {
-    const t = prompt('請貼上電費明細文字內容：');
-    if (t) parseBillText(t);
-  });
-}
-
-function importPDF(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  if (typeof pdfjsLib === 'undefined') { alert('PDF 引擎載入中，請稍後再試'); return; }
-  
-  const btn = document.querySelector('button[onclick*="pdfInput"]');
-  const origText = btn.textContent;
-  btn.textContent = '⏳ 處理中...';
-  
-  const reader = new FileReader();
-  reader.onload = async function() {
-    try {
-      const pdf = await pdfjsLib.getDocument({ data: reader.result, disableWorker: true }).promise;
-      let fullText = '';
-      let imgData = null;
-      
-      for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        const pageText = content.items.map(it => it.str).join(' ');
-        fullText += pageText + '\n';
-        
-        if (!pageText.trim() && i === 1) {
-          const viewport = page.getViewport({ scale: 2 });
-          const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-          imgData = canvas.toDataURL('image/png');
-        }
-      }
-      
-      if (fullText.trim().length > 50) {
-        parseBillText(fullText);
-        btn.textContent = origText;
-      } else if (imgData) {
-        await ocrImage(imgData, btn, origText);
-      } else {
-        btn.textContent = origText;
-        alert('PDF 無文字也無法擷取圖片，請手動輸入');
-      }
-    } catch (err) {
-      btn.textContent = origText;
-      alert('PDF 處理失敗：' + err.message);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-  e.target.value = '';
-}
-
-async function ocrImage(imgData, btn, origText) {
-  btn.textContent = '🔍 OCR 辨識中...';
-  try {
-    const { data: { text } } = await Tesseract.recognize(imgData, 'chi_tra+eng', {
-      logger: m => { if (m.status === 'recognizing text') btn.textContent = '🔍 ' + Math.round(m.progress*100) + '%'; }
-    });
-    parseBillText(text);
-  } catch (e) {
-    alert('OCR 失敗：' + e.message);
-  }
-  btn.textContent = origText;
-}
-
-function parseBillText(text) {
-  let found = 0;
-  let t = text.replace(/\s+/g, ' ');
-
-  // === 台電帳單格式（含 OCR 容錯） ===
-  // 台灣電力公司 115年05月（容忍 OCR 加空格）
-  m = t.match(/台\s*灣\s*電\s*力\s*公\s*司\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月/);
-  if (!m) m = t.match(/(?:電力|電費).*?(\d{2,3})\s*[年\/]\s*(\d{1,2})\s*[月]?/);
-  if (m) {
-    document.getElementById('billMonth').value = m[1] + '/' + m[2].padStart(2,'0');
-    found++;
-  }
-
-  // 應繳總金額 or 應繳金額 or OCR 遮罩誤讀
-  m = t.match(/應繳總金額\s*([\d,]+\.?\d*)\s*元/) || t.match(/應繳金額\s*([\d,]+\.?\d*)\s*元/);
-  if (!m) m = t.match(/\*{2,}\s*([\d,]+\.?\d*)\s*元/);
-  if (!m) m = t.match(/[應纓].*?[金全].*?額\s*([\d,]+\.?\d*)\s*元/);
-  if (m) { document.getElementById('totalBill').value = m[1].replace(/,/g,''); found++; }
-
-  // 計費期間 (容忍 OCR 錯誤)
-  m = t.match(/計費期間\s*(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*[~～]\s*(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
-  if (!m) m = t.match(/(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*[~～]\s*(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
-  if (m) {
-    const toAD = (y) => parseInt(y) < 200 ? parseInt(y) + 1911 : y;
-    document.getElementById('startDate').value = toAD(m[1]) + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
-    document.getElementById('endDate').value = toAD(m[4]) + '-' + m[5].padStart(2,'0') + '-' + m[6].padStart(2,'0');
-    autoMeterFromEnd(); found++;
-  }
-
-  // 本次抄表日（容忍空格）
-  m = t.match(/本?次?\s*抄\s*表\s*[日⽇]\s*(\d{2,4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
-  if (!m) m = t.match(/(?:抄表|讀表)\s*[日⽇]?[期]?\s*[：:]*\s*(\d{2,4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
-  if (m) {
-    const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
-    document.getElementById('meterDate').value = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
-    autoMeterNext(); found++;
-  }
-
-  // 下次抄表日
-  m = t.match(/下\s*次?\s*抄\s*表\s*[日⽇]\s*(\d{2,4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
-  if (m) {
-    const ad = parseInt(m[1]) < 200 ? parseInt(m[1]) + 1911 : m[1];
-    document.getElementById('meterDateNext').value = ad + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
-  }
-
-  // 經常用電度數 or 計費度數（容忍空格和小錯誤）
-  m = t.match(/(?:經|計|用)\s*[常費電]?\s*度\s*數\s*([\d,]+\.?\d*)\s*度/);
-  if (!m) m = t.match(/度\s*數\s*([\d,]+\.?\d*)\s*度/);
-  if (m) { document.getElementById('billingKwh').value = m[1].replace(/,/g,''); found++; }
-
-  // 底度費 or 基本電費
-  m = t.match(/(?:底\s*度\s*費|基\s*本\s*[電費])\s*([\d,]+\.?\d*)\s*元/);
-  if (!m) m = t.match(/[底基].*?[費金]\s*([\d,]+\.?\d*)\s*元/);
-  if (m) { document.getElementById('baseFee').value = m[1].replace(/,/g,''); found++; }
-
-  // 公共電費
-  m = t.match(/公\s*共\s*[電分]\s*[費攤]?\s*([\d,]+\.?\d*)\s*元/);
-  if (m) { document.getElementById('publicElec').value = m[1].replace(/,/g,''); found++; }
-
-  // === 我們的 App 明細格式 (fallback) ===
-  if (found === 0) {
-    m = t.match(/總電費\s*([\d,]+\.?\d*)\s*元/);
-    if (m) { document.getElementById('totalBill').value = m[1].replace(/,/g,''); found++; }
-
-    m = t.match(/計費期間\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*[~～]\s*(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
-    if (m) {
-      const toAD = (y) => parseInt(y) < 200 ? parseInt(y) + 1911 : y;
-      document.getElementById('startDate').value = toAD(m[1]) + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
-      document.getElementById('endDate').value = toAD(m[4]) + '-' + m[5].padStart(2,'0') + '-' + m[6].padStart(2,'0');
-      autoBillMonth(); autoMeterFromEnd(); found++;
-    }
-
-    m = t.match(/公共電費\s*([\d,]+\.?\d*)\s*元/);
-    if (m) { document.getElementById('publicElec').value = m[1].replace(/,/g,''); found++; }
-
-    m = t.match(/基本底度費\s*([\d,]+\.?\d*)\s*元/);
-    if (m) { document.getElementById('baseFee').value = m[1].replace(/,/g,''); found++; }
-
-    m = t.match(/計費度數\s*([\d,]+\.?\d*)\s*度/);
-    if (m) { document.getElementById('billingKwh').value = m[1].replace(/,/g,''); found++; }
-
-    m = t.match(/當期平均電價\s*([\d.]+)\s*元\/度/);
-    if (m) { document.getElementById('avgPricePerKwh').value = parseFloat(m[1]).toFixed(3); found++; }
-
-    m = t.match(/本次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-    if (m) { document.getElementById('meterDate').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); autoMeterNext(); found++; }
-
-    m = t.match(/下次抄表[日⽇]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-    if (m) { document.getElementById('meterDateNext').value = m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); }
-
-    m = t.match(/11F-1.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
-    if (m) { document.getElementById('meterAprev').value = m[1]; document.getElementById('meterAcurr').value = m[2]; found++; }
-
-    m = t.match(/11F-2.*?上期分表\s*([\d.]+).*?本期分表\s*([\d.]+)/);
-    if (m) { document.getElementById('meterBprev').value = m[1]; document.getElementById('meterBcurr').value = m[2]; found++; }
-  }
-
-  if (found > 0) {
-    calcBoth();
-    updateAvgPrice();
-  } else {
-    alert('OCR 辨識完成但無法解析欄位。\n請確認帳單格式是否包含以下關鍵字：\n總電費、計費期間、本次抄表日\n\nOCR 結果：\n' + t.slice(0, 500));
-  }
 }
 
 function autoMeterNext() {
@@ -1438,8 +1396,7 @@ function saveRecord() {
   if (isNAS) dbSave(records);
   localStorage.removeItem('renthouseDraft');
   renderHistory();
-  autoBackupToFile();
-  alert(isEdit ? '✅ 已更新！' : '✅ 已儲存！');
+  showToast(isEdit ? '✅ 已更新' : '✅ 已儲存');
 }
 
 let sortField = 'billMonth';
@@ -1467,7 +1424,9 @@ function renderOverview() {
   tbody.innerHTML = sorted.map(r => {
     const total = (r.meterA || 0) + (r.meterB || 0);
     const diff = (r.billingKwh || 0) - total;
-    return '<tr style="cursor:pointer;font-size:10px;" onclick="editRecord(' + r.id + ');">' +
+    const isEditing = (editingId !== null && r.id === editingId);
+    const cls = isEditing ? ' class="editing-row"' : '';
+    return '<tr' + cls + ' style="cursor:pointer;font-size:10px;" onclick="editRecord(' + r.id + ', true);">' +
       '<td>' + (r.billMonth || '--') + '</td>' +
       '<td>' + (r.meterAprev || 0).toFixed(1) + '</td><td>' + (r.meterAcurr || 0).toFixed(1) + '</td>' +
       '<td style="font-weight:600;">' + (r.meterA || 0).toFixed(1) + '</td>' +
@@ -1673,15 +1632,30 @@ function printRecord() {
 }
 
 function deleteRecord(id) {
-  if (!confirm('確定刪除？')) return;
-  let records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
-  records = records.filter(r => r.id !== id);
-  localStorage.setItem('renthouseRecords', JSON.stringify(records));
-  if (isNAS) { dbDelete(id); dbSave(records); }
-  renderHistory();
+  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  const rec = records.find(r => r.id === id);
+  let msg = '確定刪除這筆電費紀錄?';
+  if (rec) {
+    msg = '即將刪除 <b style="color:#dc2626;">' + (rec.billMonth || '(無月份)') + '</b> 電費紀錄'
+        + '<br>　• 總電費 ' + (rec.totalBill || 0).toFixed(0) + ' 元'
+        + '<br>　• 計費期間 ' + (rec.period || '--');
+  }
+  customConfirm({
+    title: '⚠️ 刪除電費紀錄',
+    message: msg,
+    okText: '刪除',
+    onConfirm: function() {
+      let rs = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+      rs = rs.filter(r => r.id !== id);
+      localStorage.setItem('renthouseRecords', JSON.stringify(rs));
+      if (isNAS) { dbDelete(id); dbSave(rs); }
+      showToast('🗑️ 已刪除');
+      renderHistory();
+    }
+  });
 }
 
-function editRecord(id) {
+function editRecord(id, noScroll) {
   const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   const r = records.find(r => r.id === id);
   if (!r) return;
@@ -1709,14 +1683,20 @@ function editRecord(id) {
   if (meterMode === 'list') syncMeterToList();
 
   if (r.totalBill > 0) {
-    calculate();
+    calculate(noScroll); // 帶過去,nav 時不要把結果也捲到頂
   }
+
+  renderOverview(); // 重新繪製歷史總覽 → 編輯中那列高亮紅底線
 
   const saveBtn = document.getElementById('saveBtn');
   saveBtn.textContent = '✏️ 更新記錄';
   saveBtn.className = 'primary';
 
-  document.querySelector('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!noScroll) {
+    // 只有從歷史 ✎ 進入才捲到表單頂端;上一期/下一期 不捲
+    const mainCard = document.getElementById('mainCard');
+    if (mainCard) mainCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function navRecord(dir) {
@@ -1730,20 +1710,10 @@ function navRecord(dir) {
     const cur = document.getElementById('endDate').value;
     if (cur) idx = sorted.findIndex(r => r.endDate === cur);
   }
-  const next = idx + dir;
+  // sorted 是 endDate desc(最新在 idx=0)→ 下一期(較新)= idx 變小;上一期(較舊)= idx 變大
+  const next = idx - dir;
   if (next < 0 || next >= sorted.length) return;
-  editRecord(sorted[next].id);
-}
-
-function clearHistory() {
-  const records = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
-  if (records.length === 0) { alert('目前無紀錄'); return; }
-  if (!confirm('⚠️ 共有 ' + records.length + ' 筆紀錄，確定全部清除？此動作無法復原！')) return;
-  if (!confirm('再次確認：真的要刪除所有 ' + records.length + ' 筆紀錄？')) return;
-  localStorage.setItem('renthouseBackup', localStorage.getItem('renthouseRecords'));
-  localStorage.removeItem('renthouseRecords');
-  if (isNAS) dbClear();
-  renderHistory();
+  editRecord(sorted[next].id, true); // 上一期/下一期 不捲動畫面
 }
 
 function printReport() {
@@ -1803,66 +1773,22 @@ function exportReport() {
   a.click(); URL.revokeObjectURL(url);
 }
 
-function autoBackupToFile() {
-  const data = {
-    renthouseRecords: JSON.parse(localStorage.getItem('renthouseRecords') || '[]'),
-    exportedAt: new Date().toISOString()
-  };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = '電費備份_' + new Date().toISOString().slice(0,10) + '.json';
-  a.click(); URL.revokeObjectURL(url);
-}
-
-function exportBackup() {
-  const data = {
-    renthouseRecords: JSON.parse(localStorage.getItem('renthouseRecords') || '[]'),
-    exportedAt: new Date().toISOString()
-  };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = '電費備份_' + new Date().toISOString().slice(0,10) + '.json';
-  a.click(); URL.revokeObjectURL(url);
-  alert('✅ 備份完成！(' + data.renthouseRecords.length + ' 筆)');
-}
-
-function importBackup(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    try {
-      const data = JSON.parse(ev.target.result);
-      const records = data.renthouseRecords;
-      if (!Array.isArray(records)) throw new Error('格式錯誤');
-      if (!confirm('確定還原 ' + records.length + ' 筆紀錄？將會覆蓋現有資料！')) return;
-      localStorage.setItem('renthouseRecords', JSON.stringify(records));
-      if (isNAS) dbSave(records);
-      renderHistory();
-      alert('✅ 已還原 ' + records.length + ' 筆紀錄');
-    } catch (err) {
-      alert('❌ 檔案格式錯誤，請選擇正確的備份檔');
-    }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
-}
-
 function clearForm() {
-  const ids = ['billMonth','startDate','endDate','totalBill','publicElec','billingKwh','meterDate','meterDateNext','meterAprev','meterAcurr','meterBprev','meterBcurr','meterA','meterB','totalKwh','estPublicKwh','avgPricePerKwh'];
+  const ids = ['billMonth','startDate','endDate','totalBill','publicElec','billingKwh','meterDate','meterDateNext','meterAprev','meterAcurr','meterBprev','meterBcurr','meterA','meterB','totalKwh','estPublicKwh','avgPricePerKwh','prevSum','currSum'];
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('baseFee').value = '40';
   document.getElementById('result').classList.remove('show');
-  document.getElementById('meterAdisplay').textContent = '';
-  document.getElementById('meterBdisplay').textContent = '';
+  var ad = document.getElementById('meterAdisplay');
+  var bd = document.getElementById('meterBdisplay');
+  if (ad) ad.textContent = '';
+  if (bd) bd.textContent = '';
   document.getElementById('avgPriceHint').textContent = '';
   editingId = null;
   document.getElementById('saveBtn').textContent = '💾 儲存本期記錄';
   document.getElementById('saveBtn').className = 'green';
   updateCalcBtn();
   localStorage.removeItem('renthouseDraft');
+  renderOverview(); // 清空 → 沒有編輯中那筆,清掉紅底線
 }
 
 async function initApp() {
@@ -1879,6 +1805,8 @@ async function initApp() {
       fetch(API + '?action=tenant_list').then(r => r.json()).then(data => {
         if (data && Object.keys(data).length > 0) {
           tenants = data; localStorage.setItem('renthouseTenants', JSON.stringify(tenants)); renderTenants();
+          applyWaterMode();
+          renderWaterHistory();
         }
       }).catch(() => {});
       fetch(API + '?action=draft_load').then(r => r.json()).then(data => {
@@ -1889,6 +1817,8 @@ async function initApp() {
   renderHistory();
   restoreForm();
   updateCalcBtn();
+  loadWaterRecords();
+  applyWaterMode();
 }
 initApp();
 
@@ -2070,8 +2000,12 @@ function removeBatchRow(id) {
 }
 
 function clearBatch() {
-  if (!confirm('確定清除所有批次輸入？')) return;
-  clearBatchTable();
+  customConfirm({
+    title: '⚠️ 清除批次輸入',
+    message: '確定清除所有批次輸入的資料?',
+    okText: '清除',
+    onConfirm: function() { clearBatchTable(); }
+  });
 }
 
 function clearBatchTable() {
@@ -2140,7 +2074,6 @@ function saveBatch() {
   if (isNAS) dbSave(records);
   clearBatchTable();
   renderHistory();
-  autoBackupToFile();
   let msg = '✅ 已儲存 ' + saved + ' 筆記錄';
   if (dupMonths.length > 0) msg += '\n⚠️ 跳過 ' + dupMonths.length + ' 筆重複月份：' + dupMonths.join('、');
   alert(msg);
@@ -2164,21 +2097,729 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-function autoWaterNext() { var d = document.getElementById('wReadDate').value; if (!d) return; var dt = new Date(d); dt.setMonth(dt.getMonth()+2); document.getElementById('wReadDateNext').value = dt.toISOString().slice(0,10); var y = dt.getFullYear()-1911; document.getElementById('wBillMonth').value = y+'/'+String(dt.getMonth()+1).padStart(2,'0'); calcWater(); }
-function calcWater() {
-  var mp = parseFloat(document.getElementById('wMeterPrev').value)||0, mc = parseFloat(document.getElementById('wMeterCurr').value)||0, sm = parseFloat(document.getElementById('wSubMeter').value)||0;
-  document.getElementById('wUsage').value = Math.max(0, mc-mp-sm).toFixed(1);
-  var total = (parseFloat(document.getElementById('wBaseFee').value)||0)+(parseFloat(document.getElementById('wWaterFee').value)||0)+(parseFloat(document.getElementById('wExtraFee').value)||0);
-  document.getElementById('wTotalBill').value = total.toFixed(0);
-  var mode = document.getElementById('wMode').value, aU = Math.max(0,(parseFloat(document.getElementById('wAcurr').value)||0)-(parseFloat(document.getElementById('wAprev').value)||0)), bU = Math.max(0,(parseFloat(document.getElementById('wBcurr').value)||0)-(parseFloat(document.getElementById('wBprev').value)||0));
-  document.getElementById('wAhint').textContent = aU>0?'A戶用水 '+aU.toFixed(1)+' 度':''; document.getElementById('wBhint').textContent = bU>0?'B戶用水 '+bU.toFixed(1)+' 度':'';
-  var cA=0, cB=0;
-  if (mode==='head') { var hA=(tenants.A||[]).length, hB=(tenants.B||[]).length, hT=hA+hB||1; cA=total*hA/hT; cB=total*hB/hT; }
-  else { var tU=aU+bU; cA=tU>0?total*aU/tU:total/2; cB=tU>0?total*bU/tU:total/2; }
-  document.getElementById('wResult').classList.add('show');
-  document.getElementById('wRtotal').textContent = total.toFixed(0)+' 元'; document.getElementById('wRcostA').textContent = cA.toFixed(0)+' 元'; document.getElementById('wRcostB').textContent = cB.toFixed(0)+' 元'; document.getElementById('wRtotalCost').textContent = (cA+cB).toFixed(0)+' 元';
+function autoWaterNext() {
+  var d = document.getElementById('wReadDate').value;
+  if (!d) return;
+  var dt = new Date(d);
+  dt.setMonth(dt.getMonth() + 2);
+  dt.setDate(dt.getDate() + 3); // 下期抄表日 = 本期抄表日 + 2月 + 3天
+  document.getElementById('wReadDateNext').value = dt.toISOString().slice(0, 10);
+  // 帳單月份主要由「計費迄日」推 (autoWaterBillMonth);沒迄日 fallback 用抄表日 +1
+  if (!document.getElementById('wEndDate').value) {
+    var d2 = new Date(d);
+    d2.setMonth(d2.getMonth() + 1);
+    var y = d2.getFullYear() - 1911;
+    document.getElementById('wBillMonth').value = y + '/' + String(d2.getMonth() + 1).padStart(2, '0');
+  }
+  calcWater();
 }
-function saveWaterRecord() { showToast('✅ 水費已儲存'); }
+function calcWater() {
+  // 主水表計算:用水度數 = 本期 − 上期 + 公共分攤
+  var mp = parseFloat(document.getElementById('wMeterPrev').value) || 0;
+  var mc = parseFloat(document.getElementById('wMeterCurr').value) || 0;
+  var sm = parseFloat(document.getElementById('wSubMeter').value) || 0;
+  var rawUsage = mc - mp + sm;
+  var usageEl = document.getElementById('wUsage');
+  if (mc > 0 && mp > 0 && rawUsage < 0) {
+    // 異常:本期 < 上期,提醒檢查讀數
+    usageEl.value = '⚠ 本期<上期 差 ' + Math.abs(rawUsage).toFixed(1);
+    usageEl.style.background = '#fee2e2';
+    usageEl.style.color = '#b91c1c';
+    usageEl.style.fontWeight = '700';
+  } else {
+    usageEl.value = Math.max(0, rawUsage).toFixed(1);
+    usageEl.style.background = '#f1f5f9';
+    usageEl.style.color = '';
+    usageEl.style.fontWeight = '500';
+  }
+
+  // 總費用
+  var total = (parseFloat(document.getElementById('wBaseFee').value) || 0)
+            + (parseFloat(document.getElementById('wWaterFee').value) || 0)
+            + (parseFloat(document.getElementById('wExtraFee').value) || 0);
+  document.getElementById('wTotalBill').value = total.toFixed(0);
+
+  // 分表用水:B 直讀子表;A 用扣除法(總用水度數 − B 用水)
+  var totalDegrees = Math.max(0, rawUsage); // = 本期 − 上期 + 公共分攤
+  var bU = Math.max(0, (parseFloat(document.getElementById('wBcurr').value) || 0) - (parseFloat(document.getElementById('wBprev').value) || 0));
+  var aU = Math.max(0, totalDegrees - bU);
+  // 把 A 自動算的度數寫進 readonly display
+  var aDisp = document.getElementById('wAusageDisplay');
+  if (aDisp) aDisp.value = aU > 0 ? aU.toFixed(1) + ' 度' : '';
+
+  // 人頭計數(只算有姓名的住戶)
+  var hA = (tenants.A || []).filter(function(t) { return t && t.name; }).length;
+  var hB = (tenants.B || []).filter(function(t) { return t && t.name; }).length;
+  var hT = hA + hB;
+
+  // 模式 select 旁的常駐提示(始終顯示人數,供驗算用)
+  var hcHint = document.getElementById('wHeadcountHint');
+  if (hcHint) hcHint.textContent = '👫 A戶 ' + hA + '人 / B戶 ' + hB + '人';
+
+  // sub-meter hint(只在有度數時顯示)
+  document.getElementById('wAhint').textContent = aU > 0 ? 'A戶用水 ' + aU.toFixed(1) + ' 度' : '';
+  document.getElementById('wBhint').textContent = bU > 0 ? 'B戶用水 ' + bU.toFixed(1) + ' 度' : '';
+
+  // 依模式 show/hide A/B 分表 section
+  var mode = document.getElementById('wMode').value;
+  var meterSec = document.getElementById('wMeterSection');
+  if (meterSec) meterSec.style.display = (mode === 'meter') ? '' : 'none';
+
+  // 分攤計算 + 寫「計算方式」說明(顯示每單位金額讓驗算清楚)
+  var cA = 0, cB = 0;
+  var basis = '';
+
+  if (mode === 'head') {
+    if (hT === 0) {
+      cA = total / 2; cB = total / 2;
+      basis = '依戶別人數計算(尚無住戶資料) → 各半 ' + (total / 2).toFixed(0) + ' 元';
+    } else {
+      var perHead = total / hT;
+      cA = perHead * hA;
+      cB = perHead * hB;
+      basis = '依戶別人數計算 共 ' + hT + ' 人 → 每人 '
+        + perHead.toFixed(0) + ' 元 (= ' + total.toFixed(0) + ' ÷ ' + hT + ')'
+        + '\n　　A戶 ' + hA + ' 人 × ' + perHead.toFixed(0) + ' = ' + cA.toFixed(0) + ' 元'
+        + '\n　　B戶 ' + hB + ' 人 × ' + perHead.toFixed(0) + ' = ' + cB.toFixed(0) + ' 元';
+    }
+  } else {
+    // 度數模式 - 新公式
+    var baseFee = parseFloat(document.getElementById('wBaseFee').value) || 0;
+    var waterFee = parseFloat(document.getElementById('wWaterFee').value) || 0;
+    var extraFee = parseFloat(document.getElementById('wExtraFee').value) || 0;
+    var M = Math.max(0, mc - mp);                // 兩戶共同使用度數
+    var S = sm;                                   // 公共分攤度數(平分)
+    var Au = Math.max(0, M - bU);                // A 推算
+    var aDeg = Au + S / 2;                       // A 計費度數
+    var bDeg = bU + S / 2;                       // B 計費度數
+    var degTotal = aDeg + bDeg;                  // = M + S
+    var baseShare = baseFee / 2;
+    var extraShare = extraFee / 2;
+    var aWaterFee, bWaterFee;
+    if (degTotal > 0) {
+      aWaterFee = waterFee * aDeg / degTotal;
+      bWaterFee = waterFee * bDeg / degTotal;
+    } else {
+      aWaterFee = waterFee / 2;
+      bWaterFee = waterFee / 2;
+    }
+    cA = baseShare + extraShare + aWaterFee;
+    cB = baseShare + extraShare + bWaterFee;
+    // 重新覆寫 aU 變數讓上層輸出 hint 使用新邏輯算的 A 用量
+    aU = Au;
+    var perDeg = degTotal > 0 ? waterFee / degTotal : 0;
+    basis = '依用水度數分攤(B 戶子表實測,A 戶推算)'
+      + '\n  ▼ 兩戶共用 ' + M.toFixed(1) + ' 度(主表 ' + mc.toFixed(1) + '−' + mp.toFixed(1) + ')'
+      + '\n     B 子表 ' + bU.toFixed(1) + ' 度 → A = ' + M.toFixed(1) + '−' + bU.toFixed(1) + ' = ' + Au.toFixed(1) + ' 度'
+      + '\n  ▼ 公共分攤 ' + S.toFixed(1) + ' 度,平分各 ' + (S/2).toFixed(1) + ' 度'
+      + '\n     A 計費 = ' + Au.toFixed(1) + '+' + (S/2).toFixed(1) + ' = ' + aDeg.toFixed(1) + ' 度'
+      + '\n     B 計費 = ' + bU.toFixed(1) + '+' + (S/2).toFixed(1) + ' = ' + bDeg.toFixed(1) + ' 度'
+      + '\n  ▼ 基本費 ' + baseFee.toFixed(0) + '、代徵 ' + extraFee.toFixed(0) + ' → 兩戶平分各 ' + (baseShare + extraShare).toFixed(0) + ' 元'
+      + '\n  ▼ 用水費 ' + waterFee.toFixed(0) + ' 元 ÷ ' + degTotal.toFixed(1) + ' 度 = 每度 ' + perDeg.toFixed(2) + ' 元'
+      + '\n     A:' + aDeg.toFixed(1) + '×' + perDeg.toFixed(2) + ' = ' + aWaterFee.toFixed(0) + ' 元'
+      + '\n     B:' + bDeg.toFixed(1) + '×' + perDeg.toFixed(2) + ' = ' + bWaterFee.toFixed(0) + ' 元'
+      + '\n  ════════════'
+      + '\n  A 應繳 = ' + baseShare.toFixed(0) + '+' + extraShare.toFixed(0) + '+' + aWaterFee.toFixed(0) + ' = ' + cA.toFixed(0) + ' 元'
+      + '\n  B 應繳 = ' + baseShare.toFixed(0) + '+' + extraShare.toFixed(0) + '+' + bWaterFee.toFixed(0) + ' = ' + cB.toFixed(0) + ' 元';
+  }
+
+  document.getElementById('wResult').classList.add('show');
+  var basisEl = document.getElementById('wRbasis');
+  if (basisEl) { basisEl.textContent = basis; basisEl.style.whiteSpace = 'pre-line'; }
+  document.getElementById('wRtotal').textContent = total.toFixed(0) + ' 元';
+  document.getElementById('wRcostA').textContent = cA.toFixed(0) + ' 元';
+  document.getElementById('wRcostB').textContent = cB.toFixed(0) + ' 元';
+  document.getElementById('wRtotalCost').textContent = (cA + cB).toFixed(0) + ' 元';
+  if (typeof updateWaterSaveBtn === 'function') updateWaterSaveBtn();
+}
+
+// 計費期間/抄表日連動(仿電費 autoEndDate / autoBillMonth / autoMeterFromEnd / autoMeterNext)
+function autoWaterEnd() {
+  var s = document.getElementById('wStartDate').value;
+  if (!s) return;
+  var d = new Date(s);
+  d.setMonth(d.getMonth() + 2);
+  d.setDate(d.getDate() - 2); // 訖日 = 起日 + 2月 − 2天
+  document.getElementById('wEndDate').value = d.toISOString().slice(0, 10);
+  autoWaterBillMonth();
+  autoWaterMeterFromEnd();
+}
+
+function autoWaterBillMonth() {
+  var e = document.getElementById('wEndDate').value;
+  if (!e) return;
+  // 帳單月份 = 計費迄日的月份 + 1(可能跨年)
+  var d = new Date(e);
+  d.setMonth(d.getMonth() + 1);
+  var minguo = d.getFullYear() - 1911;
+  var mm = String(d.getMonth() + 1).padStart(2, '0');
+  document.getElementById('wBillMonth').value = minguo + '/' + mm;
+}
+
+function autoWaterMeterFromEnd() {
+  var e = document.getElementById('wEndDate').value;
+  if (!e) return;
+  document.getElementById('wReadDate').value = e; // 本期抄表日 = 計費迄日
+  autoWaterNext();
+}
+
+// 預設起日 = 水費歷史最新一筆的訖日 + 1 日(編輯中或已填值都不覆蓋)
+function autoWaterStartDateFromHistory() {
+  if (editingWaterId) return;
+  var startInput = document.getElementById('wStartDate');
+  if (!startInput || startInput.value) return;
+  var latest = null;
+  (waterRecords || []).forEach(function(r) {
+    if (r && r.endDate && (!latest || r.endDate > latest.endDate)) latest = r;
+  });
+  if (!latest || !latest.endDate) return;
+  var d = new Date(latest.endDate);
+  d.setDate(d.getDate() + 1);
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  startInput.value = y + '-' + m + '-' + day;
+  // 上期的本期指針 = 新一期的上期指針(主水表 + A/B 子表都帶)
+  function fillPrev(id, val) {
+    var el = document.getElementById(id);
+    if (el && !el.value && val !== undefined && val !== null && val !== '' && parseFloat(val) > 0) {
+      el.value = val;
+    }
+  }
+  fillPrev('wMeterPrev', latest.wMeterCurr);
+  fillPrev('wAprev', latest.wAcurr);
+  fillPrev('wBprev', latest.wBcurr);
+  autoWaterEnd(); // 起日 → 訖日 → 帳單月份 → 抄表日 → 下期抄表日 cascade
+}
+// === Water records management ===
+var editingWaterId = null;
+var waterRecords = [];
+
+function loadWaterRecords() {
+  try {
+    var local = JSON.parse(localStorage.getItem('renthouseWaterRecords') || '[]');
+    if (Array.isArray(local)) waterRecords = local;
+  } catch(e) {}
+  if (isNAS) {
+    fetch(API + '?action=water_list')
+      .then(function(r) { return r.json(); })
+      .then(function(rows) {
+        if (Array.isArray(rows)) {
+          waterRecords = rows;
+          localStorage.setItem('renthouseWaterRecords', JSON.stringify(waterRecords));
+          renderWaterHistory();
+          autoWaterStartDateFromHistory();
+        }
+      })
+      .catch(function() {});
+  }
+  renderWaterHistory();
+  autoWaterStartDateFromHistory();
+}
+
+function applyWaterMode() {
+  if (editingWaterId) return; // 編輯中不覆蓋當期 record 的模式
+  var mode = (tenants && tenants.waterBillingMode) || 'head';
+  var sel = document.getElementById('wMode');
+  if (sel) sel.value = mode;
+  if (typeof calcWater === 'function') calcWater(); // 更新人頭提示
+}
+
+function resetWaterFilters() { clearWaterFilters(); }
+
+function clearWaterFilters() {
+  currentWaterYear = '';
+  currentWaterMonth = '';
+  updateWaterFilterUI();
+  renderWaterHistory();
+}
+
+function getAvailableWaterYears() {
+  var ys = [];
+  var seen = {};
+  (waterRecords || []).forEach(function(r) {
+    if (r && r.billMonth) {
+      var y = r.billMonth.split('/')[0];
+      if (y && !seen[y]) { seen[y] = 1; ys.push(y); }
+    }
+  });
+  ys.sort().reverse();
+  return ys;
+}
+
+function navWaterYear(dir) {
+  var years = getAvailableWaterYears();
+  if (years.length === 0) { showToast('尚無水費資料'); return; }
+  // cycle: ['', 最新, ..., 最舊];任一方向 wrap-around,永遠看得到變化
+  var cycle = [''].concat(years);
+  var idx = cycle.indexOf(currentWaterYear || '');
+  if (idx < 0) idx = 0;
+  var ni = (idx + (dir > 0 ? 1 : -1) + cycle.length) % cycle.length;
+  currentWaterYear = cycle[ni];
+  updateWaterFilterUI();
+  renderWaterHistory();
+}
+
+function selectWaterMonth(mm) {
+  if (currentWaterMonth === mm) {
+    currentWaterMonth = '';
+  } else {
+    currentWaterMonth = mm;
+    if (!currentWaterYear) {
+      var ys = getAvailableWaterYears();
+      if (ys.length > 0) currentWaterYear = ys[0];
+    }
+  }
+  updateWaterFilterUI();
+  renderWaterHistory();
+}
+
+function setWaterYear(y) {
+  currentWaterYear = y || '';
+  updateWaterFilterUI();
+  renderWaterHistory();
+}
+
+function updateWaterFilterUI() {
+  var sel = document.getElementById('waterYearSel');
+  if (sel) {
+    var years = getAvailableWaterYears();
+    sel.innerHTML = '<option value="">全部年份</option>' + years.map(function(y) {
+      return '<option value="' + y + '"' + (y === currentWaterYear ? ' selected' : '') + '>' + y + ' 年</option>';
+    }).join('');
+    // 確保 select 顯示值跟 state 同步(innerHTML 重寫後有時 selected 屬性不生效)
+    sel.value = currentWaterYear || '';
+  }
+  var grid = document.getElementById('waterMonthGrid');
+  if (!grid) return;
+  var html = '';
+  for (var i = 1; i <= 12; i++) {
+    var mm = String(i).padStart(2, '0');
+    var isSel = mm === currentWaterMonth;
+    var bg = isSel ? '#4A90D9' : '#fff';
+    var fg = isSel ? '#fff' : '#475569';
+    var border = isSel ? '#4A90D9' : '#e2e8f0';
+    html += '<button onclick="selectWaterMonth(\'' + mm + '\')" '
+      + 'style="background:' + bg + ';color:' + fg + ';border:1px solid ' + border + ';'
+      + 'border-radius:8px;padding:6px 0;font-size:13px;font-weight:600;margin:0;min-height:34px;cursor:pointer;width:100%;">'
+      + i + '月</button>';
+  }
+  grid.innerHTML = html;
+}
+
+function onWaterModeChange(mode) {
+  if (editingWaterId) {
+    // 編輯中只影響當期計算,不寫全域
+    calcWater();
+    return;
+  }
+  if (!tenants) tenants = { A: [], B: [] };
+  tenants.waterBillingMode = mode;
+  persistTenants();
+  calcWater();
+}
+
+function computeWaterShare(r, unit) {
+  // 1) 已有凍結的 costA/costB(新版儲存的紀錄)→ 直接用
+  var frozen = unit === 'A' ? r.costA : r.costB;
+  if (frozen !== undefined && frozen !== null && frozen !== '' && !isNaN(parseFloat(frozen))) {
+    return parseFloat(frozen);
+  }
+  // 2) 否則動態算(legacy 紀錄,沒存 cost)
+  var mode = r.mode || (tenants && tenants.waterBillingMode) || 'head';
+  var total = parseFloat(r.totalBill) || 0;
+  var wA = Math.max(0, (parseFloat(r.wAcurr) || 0) - (parseFloat(r.wAprev) || 0));
+  var wB = Math.max(0, (parseFloat(r.wBcurr) || 0) - (parseFloat(r.wBprev) || 0));
+  var wTotal = wA + wB;
+  if (mode === 'meter' && wTotal > 0) {
+    return unit === 'A' ? (total * wA / wTotal) : (total * wB / wTotal);
+  }
+  var hA = (tenants.A || []).filter(function(t) { return t && t.name; }).length || 1;
+  var hB = (tenants.B || []).filter(function(t) { return t && t.name; }).length || 1;
+  var hT = hA + hB;
+  return unit === 'A' ? (total * hA / hT) : (total * hB / hT);
+}
+
+function getNum(id) { var el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; }
+function getVal(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+function updateWaterSaveBtn() {
+  // 必須有「用水費」或「本期指針」其中之一才能存,單純預設(基本費 71.4 + 代徵 24)不算
+  var hasRealInput = getNum('wWaterFee') > 0 || getNum('wMeterCurr') > 0 || getNum('wAcurr') > 0 || getNum('wBcurr') > 0;
+  var btn = document.getElementById('saveWaterBtn');
+  if (btn) {
+    btn.disabled = !hasRealInput;
+    btn.textContent = editingWaterId ? '✏️ 修改' : '➕ 新增';
+  }
+  var asNewBtn = document.getElementById('saveAsNewWaterBtn');
+  if (asNewBtn) {
+    asNewBtn.style.display = editingWaterId ? '' : 'none';
+    asNewBtn.disabled = !hasRealInput;
+  }
+  var delBtn = document.getElementById('deleteWaterBtn');
+  if (delBtn) delBtn.style.display = editingWaterId ? '' : 'none';
+}
+
+function saveAsNewWaterRecord() {
+  // 取消「編輯中」狀態,讓 saveWaterRecord 走「新增」路徑(新 id, 重複偵測會跳 modal 看同月+同模式有沒有重複)
+  editingWaterId = null;
+  saveWaterRecord();
+}
+
+function deleteCurrentWaterRecord() {
+  if (!editingWaterId) return;
+  deleteWaterRecord(editingWaterId);
+}
+
+// 月份重複偵測 modal
+var _pendingWaterSave = null;
+
+function showWaterDupModal(data, dup) {
+  var body = document.getElementById('waterDupBody');
+  if (!body) return;
+  body.innerHTML = '月份 <b style="color:#dc2626;">' + data.billMonth + '</b> 已存在一筆紀錄：'
+    + '<br>　• 總水費 ' + (parseFloat(dup.totalBill) || 0).toFixed(0) + ' 元'
+    + '<br>　• 抄表日 ' + fmtMinguo(dup.readDate)
+    + '<br>　• 模式 ' + (dup.mode === 'meter' ? '🔢 依用水度數' : (dup.mode === 'head' ? '👫 依戶別人數' : '未指定'))
+    + '<br><br>選「覆寫」會用目前輸入的資料取代上面這筆。';
+  document.getElementById('waterDupOverlay').classList.add('show');
+}
+
+function closeWaterDup(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('waterDupOverlay').classList.remove('show');
+}
+
+function confirmWaterDup(overwrite) {
+  document.getElementById('waterDupOverlay').classList.remove('show');
+  if (overwrite && _pendingWaterSave) {
+    _pendingWaterSave.data.id = _pendingWaterSave.dupId;
+    _doSaveWaterRecord(_pendingWaterSave.data);
+  }
+  _pendingWaterSave = null;
+}
+
+function clearWaterForm() {
+  ['wBillMonth','wStartDate','wEndDate','wReadDate','wReadDateNext',
+   'wMeterPrev','wMeterCurr','wSubMeter','wUsage',
+   'wBaseFee','wWaterFee','wExtraFee','wTotalBill',
+   'wAprev','wAcurr','wBprev','wBcurr'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  // 基本費 / 代徵費用保留預設值
+  var bf = document.getElementById('wBaseFee');
+  if (bf) bf.value = '71.4';
+  var ef = document.getElementById('wExtraFee');
+  if (ef) ef.value = '24';
+  var ah = document.getElementById('wAhint'); if (ah) ah.textContent = '';
+  var bh = document.getElementById('wBhint'); if (bh) bh.textContent = '';
+  var bsEl = document.getElementById('wRbasis');
+  if (bsEl) bsEl.textContent = '';
+  ['wRtotal','wRcostA','wRcostB','wRtotalCost'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = '';
+  });
+  var result = document.getElementById('wResult');
+  if (result) result.classList.remove('show');
+  editingWaterId = null;
+  applyWaterMode(); // 模式 select 回到全域、人頭提示刷新
+  autoWaterStartDateFromHistory(); // 帶入下一期起日預設值 + cascade
+  calcWater(); // 防禦性:確保 basis / 試算結果在最終 form 狀態下重新填回
+  updateWaterSaveBtn();
+}
+
+function saveWaterRecord() {
+  var totalBill = getNum('wTotalBill');
+  if (totalBill === 0) { showToast('⚠️ 請先輸入水費金額'); return; }
+
+  // 確保即時算出 cA / cB(讓凍結值正確)
+  calcWater();
+  var mode = getVal('wMode') || 'head';
+  var costA = 0, costB = 0;
+  if (mode === 'meter') {
+    // 新公式:基本費/代徵兩戶平分;公共分攤度數兩戶平分;用水費按計費度數比例
+    var bf = getNum('wBaseFee');
+    var wf = getNum('wWaterFee');
+    var ef = getNum('wExtraFee');
+    var M_ = Math.max(0, getNum('wMeterCurr') - getNum('wMeterPrev'));
+    var S_ = getNum('wSubMeter');
+    var Bu_ = Math.max(0, getNum('wBcurr') - getNum('wBprev'));
+    var Au_ = Math.max(0, M_ - Bu_);
+    var aDeg_ = Au_ + S_ / 2;
+    var bDeg_ = Bu_ + S_ / 2;
+    var degT_ = aDeg_ + bDeg_;
+    var aWF = degT_ > 0 ? wf * aDeg_ / degT_ : wf / 2;
+    var bWF = degT_ > 0 ? wf * bDeg_ / degT_ : wf / 2;
+    costA = bf / 2 + ef / 2 + aWF;
+    costB = bf / 2 + ef / 2 + bWF;
+  } else {
+    var hA = (tenants.A || []).filter(function(t) { return t && t.name; }).length || 1;
+    var hB = (tenants.B || []).filter(function(t) { return t && t.name; }).length || 1;
+    costA = totalBill * hA / (hA + hB);
+    costB = totalBill * hB / (hA + hB);
+  }
+
+  var data = {
+    id: editingWaterId || Date.now(),
+    billMonth: getVal('wBillMonth'),
+    startDate: getVal('wStartDate'),
+    endDate: getVal('wEndDate'),
+    readDate: getVal('wReadDate'),
+    readDateNext: getVal('wReadDateNext'),
+    totalBill: totalBill,
+    baseFee: getNum('wBaseFee'),
+    wWaterFee: getNum('wWaterFee'),
+    wExtraFee: getNum('wExtraFee'),
+    wMeterPrev: getNum('wMeterPrev'),
+    wMeterCurr: getNum('wMeterCurr'),
+    wSubMeter: getNum('wSubMeter'),
+    billingKwh: getNum('wUsage'),
+    wAprev: getNum('wAprev'),
+    wAcurr: getNum('wAcurr'),
+    wBprev: getNum('wBprev'),
+    wBcurr: getNum('wBcurr'),
+    mode: mode,
+    costA: +costA.toFixed(2),
+    costB: +costB.toFixed(2),
+    paid: (function() {
+      // 編輯時保留原來的 paid 狀態;新增預設 0
+      if (editingWaterId) {
+        var orig = waterRecords.find(function(rr) { return String(rr.id) === String(editingWaterId); });
+        return orig && parseInt(orig.paid, 10) ? 1 : 0;
+      }
+      return 0;
+    })()
+  };
+
+  // 月份重複偵測:同月 + 同模式才算重複(不同模式可同月各存一筆)
+  if (data.billMonth) {
+    var dup = waterRecords.find(function(r) {
+      return r.billMonth === data.billMonth
+        && (r.mode || '') === (data.mode || '')
+        && String(r.id) !== String(data.id);
+    });
+    if (dup) {
+      _pendingWaterSave = { data: data, dupId: dup.id };
+      showWaterDupModal(data, dup);
+      return;
+    }
+  }
+
+  _doSaveWaterRecord(data);
+}
+
+function _doSaveWaterRecord(data) {
+  var idx = waterRecords.findIndex(function(r) { return String(r.id) === String(data.id); });
+  if (idx >= 0) waterRecords[idx] = data; else waterRecords.unshift(data);
+  localStorage.setItem('renthouseWaterRecords', JSON.stringify(waterRecords));
+
+  var wasEdit = !!editingWaterId;
+  var wasOverwrite = (_pendingWaterSave === null) && (idx >= 0) && !wasEdit;
+  if (isNAS) {
+    fetch(API + '?action=water_save', { method: 'POST', body: JSON.stringify(data) })
+      .then(function(r) { return r.json(); })
+      .then(function(resp) {
+        if (resp && resp.error) { showToast('❌ NAS 錯誤:' + resp.error); }
+        else { showToast(wasEdit ? '✅ 已更新水費' : (wasOverwrite ? '✅ 已覆寫水費' : '✅ 水費已儲存')); }
+      })
+      .catch(function() { showToast('⚠️ 已存本機,NAS 同步失敗'); });
+  } else {
+    showToast(wasEdit ? '✅ 已更新水費(本機)' : (wasOverwrite ? '✅ 已覆寫水費(本機)' : '✅ 水費已儲存(本機)'));
+  }
+
+  clearWaterForm();
+  renderWaterHistory();
+}
+
+function renderWaterHistory() {
+  var tbody = document.getElementById('waterHistoryBody');
+  var table = document.getElementById('waterHistoryTable');
+  var empty = document.getElementById('waterEmptyMsg');
+  var sumBar = document.getElementById('waterTotalSummary');
+  if (!tbody || !table || !empty) return;
+
+  // 確保月曆 widget UI 跟 state 同步(月份按鈕的選中色)
+  updateWaterFilterUI();
+
+  var yearVal = currentWaterYear || '';
+  var monthVal = currentWaterMonth || '';
+
+  if (waterRecords.length === 0) {
+    empty.style.display = 'block';
+    empty.innerHTML = '尚無水費紀錄<br><span style="font-size:12px;color:#bbb;">填寫上方表單按「儲存本期紀錄」</span>';
+    table.style.display = 'none';
+    if (sumBar) sumBar.style.display = 'none';
+    return;
+  }
+
+  var filtered = waterRecords.slice();
+  if (yearVal || monthVal) {
+    filtered = filtered.filter(function(r) {
+      if (!r.billMonth) return false;
+      var parts = r.billMonth.split('/');
+      var ry = parts[0] || '';
+      var rm = parts[1] || '';
+      if (yearVal && ry !== yearVal) return false;
+      if (monthVal && rm !== monthVal) return false;
+      return true;
+    });
+  }
+
+  if (filtered.length === 0) {
+    empty.style.display = 'block';
+    empty.innerHTML = '查無符合紀錄';
+    table.style.display = 'none';
+    if (sumBar) sumBar.style.display = 'none';
+    return;
+  }
+
+  empty.style.display = 'none';
+  table.style.display = '';
+
+  // 排序:billMonth 新→舊,同月用 readDate 新→舊
+  filtered.sort(function(a, b) {
+    var bm = (b.billMonth || '').localeCompare(a.billMonth || '');
+    if (bm !== 0) return bm;
+    return (b.readDate || '').localeCompare(a.readDate || '');
+  });
+
+  var sumA = 0, sumB = 0;
+  tbody.innerHTML = filtered.map(function(r) {
+    var cA = computeWaterShare(r, 'A');
+    var cB = computeWaterShare(r, 'B');
+    sumA += cA; sumB += cB;
+    var bU_ = Math.max(0, (parseFloat(r.wBcurr) || 0) - (parseFloat(r.wBprev) || 0));
+    var wA, wB;
+    if (r.mode === 'meter') {
+      // 新邏輯:A = (主表本期 − 上期) − B;然後 A/B 各加公共/2 = 計費度數
+      var _mc = parseFloat(r.wMeterCurr) || 0;
+      var _mp = parseFloat(r.wMeterPrev) || 0;
+      var _sm = parseFloat(r.wSubMeter) || 0;
+      var _M = Math.max(0, _mc - _mp);
+      var _Au = Math.max(0, _M - bU_);
+      wA = _Au + _sm / 2;
+      wB = bU_ + _sm / 2;
+    } else {
+      wA = Math.max(0, (parseFloat(r.wAcurr) || 0) - (parseFloat(r.wAprev) || 0));
+      wB = bU_;
+    }
+    var recMode = r.mode || '';
+    var modeIcon = recMode === 'meter' ? '🔢' : (recMode === 'head' ? '👫' : '—');
+    var modeLabel = recMode === 'meter' ? '依用水度數' : (recMode === 'head' ? '依戶別人數' : '未指定');
+    var modeColor = recMode === 'meter' ? '#6366f1' : (recMode === 'head' ? '#16a34a' : '#cbd5e1');
+    var isPaid = !!(parseInt(r.paid, 10));
+    return '<tr class="clickable"' + (isPaid ? ' style="background:#f0fdf4;"' : '') + '>' +
+      '<td>' + (r.billMonth || '--') + '</td>' +
+      '<td>' + fmtMinguo(r.readDate) + '</td>' +
+      '<td style="font-size:16px;line-height:1;" title="' + modeLabel + '">' + modeIcon + '</td>' +
+      '<td>' + (parseFloat(r.totalBill) || 0).toFixed(0) + '</td>' +
+      '<td>' + wA.toFixed(1) + '</td>' +
+      '<td>' + wB.toFixed(1) + '</td>' +
+      '<td>' + cA.toFixed(0) + '</td>' +
+      '<td>' + cB.toFixed(0) + '</td>' +
+      '<td style="text-align:center;">' +
+        '<input type="checkbox" ' + (isPaid ? 'checked' : '') + ' onclick="event.stopPropagation();toggleWaterPaid(' + r.id + ', this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:#22c55e;margin:0;">' +
+      '</td>' +
+      '<td class="action-cell">' +
+        '<button class="del-btn" title="編輯" style="color:#4A90D9;font-size:15px;" onclick="event.stopPropagation();editWaterRecord(' + r.id + ')">✎</button>' +
+        '<button class="del-btn" title="刪除" style="color:#ef4444;font-size:14px;" onclick="event.stopPropagation();deleteWaterRecord(' + r.id + ')">🗑️</button>' +
+      '</td>' +
+      '</tr>';
+  }).join('');
+
+  if (sumBar) {
+    var globalMode = ((tenants && tenants.waterBillingMode) === 'meter') ? '依用水度數' : '依戶別人數';
+    sumBar.innerHTML =
+      '<span>戶A 累計：<b>' + sumA.toFixed(0) + '</b> 元</span>' +
+      '<span>戶B 累計：<b>' + sumB.toFixed(0) + '</b> 元</span>' +
+      '<span>總計：<b>' + (sumA + sumB).toFixed(0) + '</b> 元</span>' +
+      '<span style="font-size:10px;color:#94a3b8;">(目前預設：' + globalMode + ')</span>';
+    sumBar.style.display = '';
+  }
+}
+
+function editWaterRecord(id) {
+  var r = waterRecords.find(function(x) { return String(x.id) === String(id); });
+  if (!r) return;
+  editingWaterId = r.id;
+  // 全部欄位都從 DB 還原(新版 schema)
+  document.getElementById('wBillMonth').value = r.billMonth || '';
+  document.getElementById('wStartDate').value = r.startDate || '';
+  document.getElementById('wEndDate').value = r.endDate || '';
+  document.getElementById('wReadDate').value = r.readDate || '';
+  document.getElementById('wReadDateNext').value = r.readDateNext || '';
+  document.getElementById('wAprev').value = r.wAprev || '';
+  document.getElementById('wAcurr').value = r.wAcurr || '';
+  document.getElementById('wBprev').value = r.wBprev || '';
+  document.getElementById('wBcurr').value = r.wBcurr || '';
+  document.getElementById('wBaseFee').value = r.baseFee || '';
+  // legacy fallback:舊紀錄沒有 wWaterFee/wExtraFee(都是 null),把 totalBill-baseFee 倒進 wWaterFee 讓 calcWater 算出原 totalBill
+  if (r.wWaterFee !== undefined && r.wWaterFee !== null && r.wWaterFee !== '') {
+    document.getElementById('wWaterFee').value = r.wWaterFee;
+    document.getElementById('wExtraFee').value = r.wExtraFee || '';
+  } else {
+    var leftover = (parseFloat(r.totalBill) || 0) - (parseFloat(r.baseFee) || 0);
+    document.getElementById('wWaterFee').value = leftover > 0 ? leftover.toFixed(2) : '';
+    document.getElementById('wExtraFee').value = '';
+  }
+  document.getElementById('wMeterPrev').value = r.wMeterPrev || '';
+  document.getElementById('wMeterCurr').value = r.wMeterCurr || '';
+  document.getElementById('wSubMeter').value = r.wSubMeter || '';
+  document.getElementById('wUsage').value = r.billingKwh || '';
+  document.getElementById('wTotalBill').value = (parseFloat(r.totalBill) || 0).toFixed(0);
+  // 模式 select 切到 record 的模式(編輯期間隔離全域)
+  var modeSel = document.getElementById('wMode');
+  if (modeSel) modeSel.value = r.mode || (tenants && tenants.waterBillingMode) || 'head';
+  calcWater(); // calcWater 內部會呼叫 updateWaterSaveBtn,讀到 editingWaterId 變「修改」
+  var card = document.querySelector('#tab-water .card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function toggleWaterPaid(id, paid) {
+  var r = waterRecords.find(function(x) { return String(x.id) === String(id); });
+  if (!r) return;
+  r.paid = paid ? 1 : 0;
+  localStorage.setItem('renthouseWaterRecords', JSON.stringify(waterRecords));
+  if (isNAS) {
+    fetch(API + '?action=water_set_paid', { method: 'POST', body: JSON.stringify({ id: id, paid: r.paid }) })
+      .then(function(rsp) { return rsp.json(); })
+      .then(function() { showToast(paid ? '✅ 已標記收款' : '↩ 取消收款'); })
+      .catch(function() { showToast('⚠️ 已存本機,NAS 同步失敗'); });
+  } else {
+    showToast(paid ? '✅ 已標記收款(本機)' : '↩ 取消收款(本機)');
+  }
+  renderWaterHistory();
+}
+
+function deleteWaterRecord(id) {
+  var rec = waterRecords.find(function(x) { return String(x.id) === String(id); });
+  var msg = '確定刪除這筆水費紀錄?';
+  if (rec) {
+    msg = '即將刪除 <b style="color:#dc2626;">' + (rec.billMonth || '(無月份)') + '</b> 水費紀錄'
+        + '<br>　• 總水費 ' + (parseFloat(rec.totalBill) || 0).toFixed(0) + ' 元'
+        + '<br>　• 抄表日 ' + fmtMinguo(rec.readDate)
+        + '<br>　• 模式 ' + (rec.mode === 'meter' ? '🔢 依用水度數' : (rec.mode === 'head' ? '👫 依戶別人數' : '未指定'));
+  }
+  customConfirm({
+    title: '⚠️ 刪除水費紀錄',
+    message: msg,
+    okText: '刪除',
+    onConfirm: function() {
+      waterRecords = waterRecords.filter(function(rr) { return String(rr.id) !== String(id); });
+      localStorage.setItem('renthouseWaterRecords', JSON.stringify(waterRecords));
+      if (isNAS) {
+        fetch(API + '?action=water_delete', { method: 'POST', body: JSON.stringify({ id: id }) })
+          .then(function() { showToast('🗑️ 已刪除'); })
+          .catch(function() { showToast('⚠️ 本機已刪,NAS 同步失敗'); });
+      } else {
+        showToast('🗑️ 已刪除');
+      }
+      if (String(editingWaterId) === String(id)) clearWaterForm();
+      renderWaterHistory();
+    }
+  });
+}
 
 function searchTenants() {
   if (!isNAS) return;

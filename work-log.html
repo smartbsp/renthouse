@@ -1,57 +1,136 @@
-# 工作日誌 2026-06-05 — V2.1 水費+搜尋+修復
+# 工作日誌
 
-## 版本
-- V1.1: 穩定基礎版
-- V1.11: +水費計算器 +即時財務 +手機滑動
-- V2.1: +房客搜尋(修復定位)
+## V3.0 — 2026-06-06(Claude Code session,大幅改寫)
+
+### 🎯 session 目標
+Claude Code 接手 renthouse 專案(對方原為 opencode + V2.1),依需求重新設計水費系統、統合電費 UI、清理冗餘按鈕、修 DOM 結構 bug。
+
+### 沙盒策略
+不直接動 production `renthouse/`,全部在 `renthouse-dev/` 跑:
+- 本地 `C:\Users\user\Desktop\renthouse\index-dev.html`
+- NAS `https://lohastime.com.tw/renthouse-dev/`
+- 共用 `renthouse/api.php`(同一 DB,新欄位 NULL default 對舊版前端不影響)
+
+### DB schema 擴充
+原本 `renthouse_water_records` 只有 11 欄,丟太多輸入資料。一次 ALTER 加 10 欄:
+- `wMeterPrev`, `wMeterCurr`, `wSubMeter`, `wWaterFee`, `wExtraFee`, `readDateNext`
+- `mode`(per-record 凍結)、`costA`, `costB`(凍結計算結果)
+- `paid`(已收款 checkbox)
+
+ALTER 前備份 `nas:/share/.../renthouse_backups/water_table_pre_alter_*.sql`。
+
+### 水費系統完整改寫
+
+**模式命名改善**:
+- 「依人頭/依度數」→「依戶別人數(👫)/依用水度數(🔢)」
+- 全域預設存 `tenants.waterBillingMode`
+
+**新公式**:
+- B 戶有獨立子表,A 戶用扣除法(M − B)
+- 基本費 + 代徵費 兩戶平分
+- 公共分攤度數 兩戶平分
+- 用水費按計費度數比例分
+
+**自動帶值 & cascade**:
+- 起日 預設 = 上一期訖日 + 1 日
+- 上期指針(主表 + A/B 子表)= 上一期的本期讀數
+- 起日 → 訖日 (+2月 −2天) → 帳單月份(訖日月 +1)→ 本期抄表日(=訖日)→ 下期抄表日(+2月 +3日)
+
+**預設值**:
+- 基本費 71.4(台北市自來水基本月費)、代徵 24
+
+**異常警告**:本期 < 上期 時用水度數欄變紅底白字
+
+**儲存條件**:除了 totalBill > 0,還要至少有「用水費 OR 主表本期 OR A本期 OR B本期」之一,避免純預設值不小心存進去
+
+**重複偵測**:同月 + 同模式 才視為重複(觸發自製 modal);不同模式可共存
+
+**編輯按鈕組**:
+- 修改 / 另存新筆 / 刪除 / 清除
+- 另存新筆 = 取消 editing → 走「新增」路徑
+
+**歷史月曆 widget**:
+- 民國年下拉 + ◀▶ 微調(wrap-around)+「全部」清空
+- 12 月份按鈕 grid
+- 切 tab / refresh / 回水費 tab → 篩選清空
+- 排序 billMonth desc → readDate desc
+- 抄表日改民國格式(`fmtMinguo` 工具)
+
+**已收款 checkbox**:每筆 ☐ 勾選後整列淡綠底,新 API `water_set_paid`
+
+**計算方式 banner**:黃色框完整推算式(總用水度數 → A/B 計費度數 → 每度單價 → 各戶應繳)
+
+### 電費系統統合
+- 拿掉「條列/雙欄」切換按鈕
+- 4 列 4 欄表格(上期/本期/用電/對帳 × 戶A/戶B/合計)
+- 📋 歷史總覽永遠可見(max-height 180px ~6 期)
+- 試算結果加 📐 計算方式 黃色 banner
+- 上一期/下一期:**不捲動**;歷史總覽點擊也**不捲動** + 該列加紅底線高亮
+- 「上一期 / 下一期」方向修正(下一期 = 較新)
+
+### 全面簡化:5 顆按鈕全清
+- 📄 匯入PDF(瀏覽器內 Tesseract OCR 中文不準)
+- 📋 貼上(regex 對台電版型敏感)
+- 💾 備份 / 📥 還原(NAS MySQL 已是 source of truth)
+- 清除全部紀錄(破壞性)
+- 對應 JS 函式 + pdf.js / tesseract.js CDN 載入全清
+- 副作用:`autoBackupToFile()` 原本在每次儲存時靜默觸發瀏覽器下載 JSON,一併拿掉
+
+### 自製 confirm modal
+6 處原本 native `confirm()` 換成 `customConfirm({title, message, okText, onConfirm})`:
+- 電費刪除單筆、清除全部紀錄、還原備份(現已移除)
+- 批次輸入清除
+- 水費刪除、水費月份重複覆寫
+
+### 抓到的 bug & 修法
+
+1. **`waterRecords` var hoisting bug**:switchTab 初次被觸發在 `var waterRecords = []` 之前,resetWaterFilters → renderWaterHistory 踩到 `undefined.length` 整個 script eval 中斷 → 看起來歷史不見。**修**:把 state 宣告搬到 script 最頂端(早期初始化區塊)。
+
+2. **DOM div 不平衡**:batchCard 內有多一個 `</div>`,造成 tab-electric 提早關閉 →「電費歷史」溢出到水費 tab。**修**:抓到 awk 計數差 1,刪掉 L486 的多餘 `</div>`。
+
+3. **scrollIntoView 爆走**:多個函式各自會 scroll,組合會跳到頁底。**修**:`noScroll` 參數一路 forward;`calculate()` 用 `arguments[0]` 接收。
+
+4. **上一期/下一期方向相反**:sorted 是 endDate desc,本來 `idx + dir` 把「下一期」帶到較舊紀錄。**修**:`idx - dir`。
+
+5. **基本費預設讓「新增」一開始就可按**:totalBill=95.4 不為 0,使用者不小心點就建一筆空紀錄。**修**:可按條件改成「用水費 OR 主表本期 OR A本期 OR B本期」其一 > 0。
+
+### 文件 / 工具
+- `summary-dev.html` — 獨立請款合計頁(本地,未推 NAS)
+- CLAUDE.md 大幅重寫,加新準則:
+  - HTML div 平衡檢查
+  - var 早期初始化
+  - scrollIntoView 控制
+- 全套備份(2026-06-06):
+  - `nas:/share/.../renthouse_backups/full_db_20260606_142956.sql` — 全 5 表
+  - `nas:/share/.../renthouse_backups/v3.0_20260606_142959/` — index.html + api.php + manifest.json
+  - 本地 `nas_backup_20260606/`(scp 拉回)
+
+### 待辦(留給下一個 session)
+- [ ] 房客 `tenant_log` 寫入 — 目前搜尋功能空(JS 沒呼叫 `tenant_log_save`)
+- [ ] 合計頁籤(production index.html 還空,只有 sandbox `summary-dev.html` 雛形)
+- [ ] 請款報表生成
+- [ ] 把 dev 推到 production(目前 production 還是 V2.1)— 等使用者驗收 V3.0
 
 ---
 
-## 關鍵教訓
-### 頁籤結構定位
-- **問題**: 多次因 `</div>` 定位失誤導致結構崩塌，搜尋卡誤入電費頁籤
-- **解法**: 使用獨特標記(id)定位，不依賴模糊的 `</div>` 匹配
-- **正確定位**: `editBtnB` 唯一標記 → 搜尋卡插在 card close 與 tab-tenant close 之間
+## V2.1 — 2026-06-05(opencode session,最後一次)
 
----
+### 關鍵教訓
+- 多次因 `</div>` 定位失誤導致結構崩塌(搜尋卡誤入電費頁籤)
+- 改用獨特 id(`editBtnB`)當錨點
 
-## 死當/崩潰原因分析
-### 1. 多重 `</div>` 匹配失誤（最嚴重）
-- **現象**: 插入 HTML 時用 `</div>\n\n</div>` 當 oldString，檔案中有多處相同組合
-- **結果**: 編輯誤配到錯誤位置，刪除或移動了關鍵的 `</div>`，破壞 DOM 結構
-- **症狀**: 頁面空白、頁籤內容消失、功能出現於錯誤頁籤
-- **修復**: 改用獨特 id（如 `editBtnB`）當錨點，不再用泛泛的 `</div>` 匹配
-
-### 2. 未經測試一次大量修改
-- **現象**: 同時改 HTML + CSS + JS，出錯無法定位哪一項導致
-- **結果**: 反覆 git revert 浪費時間
-- **修復**: 改為一次只改一個功能，上傳測試後再改下一個
-
-### 3. SW 快取混淆問題診斷
-- **現象**: 檔案已正確上傳但瀏覽器顯示舊版
-- **誤判**: 多次以為是程式碼錯誤，實際是 Service Worker 快取
-- **辨別方法**: 換瀏覽器測試、curl 查看原始回應、比對 MD5
-
-### 4. modalTitle 缺 id
-- **現象**: `showSearchDetail` 存取 `getElementById('modalTitle')` 取到 null
-- **影響**: 點擊搜尋結果時才觸發，非頁面載入時，難以排查
-- **修復**: 在 modal h2 加 `id="modalTitle"`
-
-### 5. 箭頭函式與舊瀏覽器相容
-- **現象**: 程式碼中有 `=>` 箭頭函式，部分環境不支援
-- **修復**: 改用 `function(){}` 寫法，避免未知崩潰
+### 死當/崩潰原因分析
+1. 多重 `</div>` 匹配失誤(最嚴重)
+2. 未經測試一次大量修改
+3. SW 快取混淆問題診斷
+4. `modalTitle` 缺 id
+5. 箭頭函式與舊瀏覽器相容
 
 ### 水費頁籤
-- 完整水費帳單格式: 抄表日、指針數、公共分攤度數、基本費/用水費/代徵費用
+- 完整水費帳單格式:抄表日、指針數、公共分攤度數、基本費/用水費/代徵費用
 - 本期實用度數 = 本期指針數 − 上期指針數 + 公共分攤度數
-- 計算模式: `依實際住戶人數分攤` / `依實際用水度數分攤`
-- 模式選擇器在右上角，按鈕(新增/編輯)在右下角
-- 編輯/儲存共用按鈕切換，小尺寸(`class="small"`)靠右
-
-### 水費歷史
-- 仿電費: 月份/期間過濾、累計摘要、點選編輯、刪除
-- API: `water_save`, `water_list`, `water_delete`
-- MySQL: `renthouse_water_records` 表
+- 計算模式:依實際住戶人數分攤 / 依實際用水度數分攤
+- 模式選擇器在右上角,按鈕(新增/編輯)在右下角
 
 ### 即時計算
 - 財務欄位全部改用 `oninput`(非 `onchange`)
@@ -62,18 +141,7 @@
 - `switchTab` 配合 `scrollTo`
 - scroll 事件監聽同步頂部頁籤按鈕
 
----
-
-## 資料庫
-| 表 | 用途 |
-|----|------|
-| renthouse_records | 電費 |
-| renthouse_tenants | 房客(JSON) |
-| renthouse_tenant_log | 房客異動 |
-| renthouse_water_records | 水費 |
-| renthouse_drafts | 電費草稿 |
-
 ## 部署
 - `scp index.html api.php sw.js nas:/share/CACHEDEV1_DATA/Web/renthouse/`
-- `上傳NAS.bat`
-- 備份: `git tag v*.*` + `ssh nas cp` + `mysqldump`
+- 雙擊「上傳NAS.bat」
+- 備份:`git tag v*.*` + `ssh nas cp` + `mysqldump`

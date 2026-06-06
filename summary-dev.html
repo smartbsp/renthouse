@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>請款合計 [DEV]</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, 'Noto Sans TC', sans-serif; max-width: 100%; margin: 0 auto; padding: 12px 10px 24px; background: #f0f2f5; -webkit-text-size-adjust: 100%; }
+  .card { background: #fff; border-radius: 16px; padding: 16px 14px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); margin-bottom: 14px; }
+  h1 { text-align: center; margin: 0 0 2px; font-size: 20px; font-weight: 700; color: #1a1a2e; }
+  .subtitle { text-align: center; color: #94a3b8; font-size: 12px; margin-bottom: 14px; }
+  label { display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; font-weight: 600; }
+  select { width: 100%; padding: 10px; border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: 15px; background: #f8fafc; color: #1e293b; min-height: 42px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' fill='none' stroke-width='2'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+  button { padding: 12px 16px; border: none; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; transition: transform 0.1s, opacity 0.15s; }
+  button:active { transform: scale(0.97); opacity: 0.85; }
+  button.primary { background: #4A90D9; color: #fff; box-shadow: 0 2px 6px rgba(74,144,217,0.2); }
+  button.green { background: #2E7D32; color: #fff; box-shadow: 0 2px 6px rgba(46,125,50,0.2); }
+  button.secondary { background: #f1f5f9; color: #475569; }
+
+  .bills-wrap { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 768px) { .bills-wrap { grid-template-columns: 1fr 1fr; } }
+
+  .bill { border-radius: 14px; padding: 14px; border: 2px solid; }
+  .bill-a { background: #f5f8ff; border-color: #4A90D9; }
+  .bill-b { background: #f2faf5; border-color: #2E7D32; }
+  .bill h2 { margin: 0 0 6px; font-size: 16px; }
+  .bill-a h2 { color: #4A6FA5; }
+  .bill-b h2 { color: #2E7D32; }
+
+  .tenant-info { font-size: 12px; color: #475569; margin-bottom: 10px; padding: 8px 10px; background: #fff; border-radius: 8px; line-height: 1.5; }
+  .tenant-info b { color: #1e293b; }
+
+  .sub-section { background: #fff; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .sub-title { font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #f1f5f9; }
+
+  .line { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; color: #475569; gap: 8px; }
+  .line .label { color: #94a3b8; }
+  .line .value { font-weight: 600; color: #334155; text-align: right; }
+  .line.sub { padding-left: 14px; font-size: 12px; color: #94a3b8; }
+  .line.sub .label, .line.sub .value { color: #94a3b8; font-weight: 500; }
+  .line.subtotal { border-top: 1px solid #e2e8f0; padding-top: 6px; margin-top: 4px; }
+  .line.subtotal .label { color: #475569; font-weight: 600; }
+  .line.subtotal .value { color: #1e293b; font-weight: 700; }
+
+  .grand-total { background: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 12px 14px; margin-top: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .grand-total .label { font-size: 14px; font-weight: 700; color: #92400e; }
+  .grand-total .value { font-size: 22px; font-weight: 800; color: #b45309; }
+
+  .empty-msg { color: #cbd5e1; font-size: 12px; text-align: center; padding: 16px 8px; line-height: 1.6; }
+  .empty-msg small { color: #cbd5e1; font-size: 10px; display: block; margin-top: 4px; }
+
+  .dev-badge { display: inline-block; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; vertical-align: middle; margin-left: 8px; letter-spacing: 0.5px; }
+
+  .data-source { font-size: 11px; color: #94a3b8; text-align: center; margin-top: 6px; }
+  .data-source.online { color: #16a34a; }
+  .data-source.offline { color: #ea580c; }
+
+  .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .actions button { flex: 1; min-width: 140px; }
+
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; z-index: 9999; opacity: 0; transition: opacity 0.3s; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+  #toast.show { opacity: 1; }
+
+  @media print {
+    body { background: #fff; padding: 8px; }
+    .no-print { display: none !important; }
+    .card { box-shadow: none; border: 1px solid #e2e8f0; }
+    .bills-wrap { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .bill { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<div class="card">
+  <h1>💰 請款合計<span class="dev-badge">DEV</span></h1>
+  <p class="subtitle">11F-1（戶A）& 11F-2（戶B）水電費分攤</p>
+
+  <div class="no-print">
+    <label>選擇帳單月份</label>
+    <select id="monthSelect" onchange="render()"></select>
+    <div class="data-source" id="dataSource">資料載入中...</div>
+  </div>
+</div>
+
+<div class="bills-wrap" id="billsWrap"></div>
+
+<div class="card no-print">
+  <div class="actions">
+    <button class="primary" onclick="copyBill('A')">📋 複製 A 戶</button>
+    <button class="green" onclick="copyBill('B')">📋 複製 B 戶</button>
+    <button class="secondary" onclick="window.print()">🖨️ 列印</button>
+  </div>
+</div>
+
+<script>
+const isNAS = location.hostname.includes('lohastime.com.tw');
+const API = isNAS ? 'https://lohastime.com.tw/renthouse/api.php' : '';
+
+let electricRecords = [];
+let waterRecords = [];
+let tenants = { A: [], B: [] };
+let waterReady = false;
+
+async function loadAll() {
+  const sourceEl = document.getElementById('dataSource');
+
+  if (API) {
+    try {
+      const r = await fetch(API + '?action=list');
+      electricRecords = await r.json();
+      localStorage.setItem('renthouseRecords', JSON.stringify(electricRecords));
+      sourceEl.textContent = '✓ 連線 NAS (' + electricRecords.length + ' 筆電費)';
+      sourceEl.className = 'data-source online';
+    } catch (e) {
+      electricRecords = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+      sourceEl.textContent = '⚠ NAS 連線失敗,改讀 localStorage (' + electricRecords.length + ' 筆)';
+      sourceEl.className = 'data-source offline';
+    }
+  } else {
+    electricRecords = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+    sourceEl.textContent = '本機模式 · localStorage (' + electricRecords.length + ' 筆電費)';
+    sourceEl.className = 'data-source';
+  }
+
+  if (API) {
+    try {
+      const r = await fetch(API + '?action=water_list');
+      waterRecords = await r.json();
+      waterReady = Array.isArray(waterRecords);
+      if (!waterReady) waterRecords = [];
+    } catch (e) {
+      waterRecords = [];
+      waterReady = false;
+    }
+  }
+
+  if (API) {
+    try {
+      const r = await fetch(API + '?action=tenant_list');
+      const t = await r.json();
+      if (t && Object.keys(t).length > 0) {
+        tenants = t;
+        localStorage.setItem('renthouseTenants', JSON.stringify(tenants));
+      } else {
+        tenants = JSON.parse(localStorage.getItem('renthouseTenants') || '{"A":[],"B":[]}');
+      }
+    } catch (e) {
+      tenants = JSON.parse(localStorage.getItem('renthouseTenants') || '{"A":[],"B":[]}');
+    }
+  } else {
+    tenants = JSON.parse(localStorage.getItem('renthouseTenants') || '{"A":[],"B":[]}');
+  }
+
+  populateMonthSelect();
+  render();
+}
+
+function populateMonthSelect() {
+  const months = [...new Set([
+    ...electricRecords.map(r => r.billMonth),
+    ...waterRecords.map(r => r.billMonth)
+  ].filter(Boolean))].sort().reverse();
+
+  const sel = document.getElementById('monthSelect');
+  if (months.length === 0) {
+    sel.innerHTML = '<option value="">（尚無任何帳單資料）</option>';
+  } else {
+    sel.innerHTML = months.map(m => '<option value="' + m + '">' + m + '</option>').join('');
+  }
+}
+
+function tenantNames(unit) {
+  const list = (tenants[unit] || []).filter(t => t.name);
+  if (list.length === 0) {
+    const ext = tenants['extSigner' + unit + '_name'];
+    return ext ? ext + '（代簽人）' : '（尚無房客）';
+  }
+  return list.map(t => t.name).join('、');
+}
+
+function tenantContact(unit) {
+  const list = tenants[unit] || [];
+  const signer = list.find(t => t.isSigner) || list[0];
+  if (signer && signer.phone) return signer.phone;
+  return tenants['extSigner' + unit + '_phone'] || '';
+}
+
+function findElec(month) {
+  return electricRecords.filter(r => r.billMonth === month);
+}
+
+function findWater(month) {
+  return waterRecords.filter(r => r.billMonth === month);
+}
+
+function computeWaterShare(r, unit) {
+  const total = parseFloat(r.totalBill) || 0;
+  const wA = Math.max(0, (parseFloat(r.wAcurr) || 0) - (parseFloat(r.wAprev) || 0));
+  const wB = Math.max(0, (parseFloat(r.wBcurr) || 0) - (parseFloat(r.wBprev) || 0));
+  const wTotal = wA + wB;
+
+  // 優先用 DB 凍結的 mode + costA/costB(新版紀錄)
+  const frozenCost = unit === 'A' ? r.costA : r.costB;
+  const recMode = r.mode || '';
+  if (frozenCost !== undefined && frozenCost !== null && frozenCost !== '' && !isNaN(parseFloat(frozenCost))) {
+    return {
+      cost: parseFloat(frozenCost),
+      basis: recMode === 'meter' ? '用水度數' : (recMode === 'head' ? '戶別人數' : '凍結'),
+      myUsage: unit === 'A' ? wA : wB,
+      totalUsage: wTotal,
+      total
+    };
+  }
+
+  // Legacy fallback:無凍結資料 → 動態算
+  let cost;
+  let basis;
+  if (wTotal > 0) {
+    cost = unit === 'A' ? (total * wA / wTotal) : (total * wB / wTotal);
+    basis = '用水度數';
+  } else {
+    const hA = (tenants.A || []).filter(t => t.name).length || 1;
+    const hB = (tenants.B || []).filter(t => t.name).length || 1;
+    const hT = hA + hB;
+    cost = unit === 'A' ? (total * hA / hT) : (total * hB / hT);
+    basis = '戶別人數';
+  }
+  return {
+    cost,
+    basis,
+    myUsage: unit === 'A' ? wA : wB,
+    totalUsage: wTotal,
+    total
+  };
+}
+
+function render() {
+  const month = document.getElementById('monthSelect').value;
+  const wrap = document.getElementById('billsWrap');
+
+  if (!month) {
+    wrap.innerHTML = '<div class="card empty-msg">請選擇帳單月份</div>';
+    return;
+  }
+
+  wrap.innerHTML = ['A', 'B'].map(u => renderBill(u, month)).join('');
+}
+
+function renderBill(unit, month) {
+  const isA = unit === 'A';
+  const label = isA ? '11F-1（戶A）' : '11F-2（戶B）';
+  const elecs = findElec(month);
+  const waters = findWater(month);
+
+  let elecHtml = '';
+  let elecTotal = 0;
+  if (elecs.length === 0) {
+    elecHtml = '<div class="empty-msg">本月無電費紀錄</div>';
+  } else {
+    elecHtml = elecs.map(r => {
+      const cost = (unit === 'A' ? r.costA : r.costB) || 0;
+      elecTotal += cost;
+      const usage = (unit === 'A' ? r.meterA : r.meterB) || 0;
+      const price = r.pricePerKwh || 0;
+      const usageCost = usage * price;
+      const publicShare = r.publicPerHouse || 0;
+      return ''
+        + '<div class="line"><span class="label">計費期間</span><span class="value">' + (r.period || '--') + '</span></div>'
+        + '<div class="line sub"><span class="label">用電 ' + usage.toFixed(1) + ' 度 × ' + price.toFixed(3) + '</span><span>' + usageCost.toFixed(0) + ' 元</span></div>'
+        + '<div class="line sub"><span class="label">公電分攤</span><span>' + publicShare.toFixed(0) + ' 元</span></div>'
+        + '<div class="line subtotal"><span class="label">電費小計</span><span class="value">' + cost.toFixed(0) + ' 元</span></div>';
+    }).join('<hr style="border:none;border-top:1px dashed #e2e8f0;margin:8px 0;">');
+  }
+
+  let waterHtml = '';
+  let waterTotal = 0;
+  if (waters.length === 0) {
+    const note = waterReady
+      ? '本月無水費紀錄'
+      : '本月無水費紀錄<small>（水費 save 待修復,資料尚未進 DB）</small>';
+    waterHtml = '<div class="empty-msg">' + note + '</div>';
+  } else {
+    waterHtml = waters.map(r => {
+      const share = computeWaterShare(r, unit);
+      waterTotal += share.cost;
+      const usageLine = share.basis === '用水度數'
+        ? '用水 ' + share.myUsage.toFixed(1) + ' / ' + share.totalUsage.toFixed(1) + ' 度（依用水度數分攤）'
+        : '依戶別人數計算';
+      return ''
+        + '<div class="line"><span class="label">抄表日</span><span class="value">' + (r.readDate || '--') + '</span></div>'
+        + '<div class="line"><span class="label">總水費</span><span class="value">' + share.total.toFixed(0) + ' 元</span></div>'
+        + '<div class="line sub"><span class="label">' + usageLine + '</span><span></span></div>'
+        + '<div class="line subtotal"><span class="label">水費小計</span><span class="value">' + share.cost.toFixed(0) + ' 元</span></div>';
+    }).join('<hr style="border:none;border-top:1px dashed #e2e8f0;margin:8px 0;">');
+  }
+
+  const grand = elecTotal + waterTotal;
+  const contact = tenantContact(unit);
+
+  return ''
+    + '<div class="bill bill-' + unit.toLowerCase() + '">'
+    +   '<h2>' + label + '</h2>'
+    +   '<div class="tenant-info">'
+    +     '<div><b>' + tenantNames(unit) + '</b></div>'
+    +     (contact ? '<div style="font-size:11px;margin-top:2px;">📞 ' + contact + '</div>' : '')
+    +   '</div>'
+    +   '<div class="sub-section">'
+    +     '<div class="sub-title">⚡ 電費</div>'
+    +     elecHtml
+    +   '</div>'
+    +   '<div class="sub-section">'
+    +     '<div class="sub-title">💧 水費</div>'
+    +     waterHtml
+    +   '</div>'
+    +   '<div class="grand-total">'
+    +     '<span class="label">' + month + ' 應繳</span>'
+    +     '<span class="value">' + grand.toFixed(0) + ' 元</span>'
+    +   '</div>'
+    + '</div>';
+}
+
+function copyBill(unit) {
+  const month = document.getElementById('monthSelect').value;
+  if (!month) { showToast('⚠️ 請先選擇月份'); return; }
+
+  const isA = unit === 'A';
+  const label = isA ? '11F-1（戶A）' : '11F-2（戶B）';
+  const elecs = findElec(month);
+  const waters = findWater(month);
+
+  const lines = [];
+  lines.push('💰 ' + label + ' 應繳明細');
+  lines.push('帳單月份：' + month);
+  const names = tenantNames(unit);
+  if (names && names !== '（尚無房客）') lines.push('房客：' + names);
+  lines.push('━━━━━━━━━━━━━━');
+  lines.push('⚡ 電費');
+
+  let elecTotal = 0;
+  if (elecs.length === 0) {
+    lines.push('　本月無紀錄');
+  } else {
+    elecs.forEach(r => {
+      const cost = (unit === 'A' ? r.costA : r.costB) || 0;
+      elecTotal += cost;
+      const usage = (unit === 'A' ? r.meterA : r.meterB) || 0;
+      lines.push('　計費期間：' + (r.period || '--'));
+      lines.push('　用電：' + usage.toFixed(1) + ' 度 × ' + (r.pricePerKwh || 0).toFixed(3) + ' = ' + (usage * (r.pricePerKwh || 0)).toFixed(0) + ' 元');
+      lines.push('　公電分攤：' + (r.publicPerHouse || 0).toFixed(0) + ' 元');
+      lines.push('　小計：' + cost.toFixed(0) + ' 元');
+    });
+  }
+
+  lines.push('━━━━━━━━━━━━━━');
+  lines.push('💧 水費');
+  let waterTotal = 0;
+  if (waters.length === 0) {
+    lines.push('　本月無紀錄');
+  } else {
+    waters.forEach(r => {
+      const share = computeWaterShare(r, unit);
+      waterTotal += share.cost;
+      lines.push('　抄表日：' + (r.readDate || '--'));
+      lines.push('　總水費：' + share.total.toFixed(0) + ' 元');
+      lines.push('　' + (share.basis === '用水度數' ? '用水 ' + share.myUsage.toFixed(1) + ' / ' + share.totalUsage.toFixed(1) + ' 度（依用水度數分攤）' : '依戶別人數計算'));
+      lines.push('　小計：' + share.cost.toFixed(0) + ' 元');
+    });
+  }
+
+  lines.push('━━━━━━━━━━━━━━');
+  lines.push('🏷️ 應繳總額：' + (elecTotal + waterTotal).toFixed(0) + ' 元');
+
+  const text = lines.join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => showToast('✅ 已複製 ' + unit + ' 戶明細'),
+      () => prompt('請手動複製：', text)
+    );
+  } else {
+    prompt('請手動複製：', text);
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timeout);
+  t._timeout = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+loadAll();
+</script>
+</body>
+</html>
