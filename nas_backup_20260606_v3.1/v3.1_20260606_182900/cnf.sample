@@ -1,0 +1,6 @@
+[client]
+host=localhost
+port=3306
+user=march_2011
+password=lohas2529time***
+default-character-set=utf8

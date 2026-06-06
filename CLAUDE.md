@@ -228,6 +228,13 @@ B 應繳 = 基本費/2 + 代徵/2 + 用水費 × (B度 / (A度+B度))
 - 6 處原本 `confirm()` 都已換掉(電費刪除/清除批次/還原備份/水費刪除/月份重複)
 
 ### MySQL 操作
+- **NAS 上有 credentials file**:`/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf`(permission 600,user 是 march_2011),所有 mysql/mysqldump 操作都用 `--defaults-file=<path>`,**不要**再把密碼寫在 command line(避免 shell history / ps aux 洩漏)
+  ```bash
+  # 推薦:
+  ssh nas "/usr/local/mariadb/bin/mysql --defaults-file=/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf lohastime -e 'SELECT ...'"
+  ssh nas "/usr/local/mariadb/bin/mysqldump --defaults-file=/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf lohastime renthouse_water_records > backup.sql"
+  ```
 - 變更 schema 前先 `mysqldump` 備份到 NAS `renthouse_backups/`
 - 重要紀錄前用 ON DUPLICATE KEY UPDATE 避免 race
 - 字串欄位(billMonth、mode、readDate 等)在 water_list 不要被 `is_numeric` 誤轉 float(api.php 有 strFields whitelist)
+- `api.php` 自己連 DB 還是用硬編碼密碼(legacy,獨立 binding 沒走 cnf)— 那邊只 PHP 內部用,不是 shell 操作

@@ -1,5 +1,57 @@
 # 工作日誌
 
+## V3.1 — 2026-06-06 晚場(收款 + 合計 + 憑證 cnf)
+
+### 主軸:合計頁籤 / 請款收款流
+
+**Phase 1 — 電費 paid 對齊水費**
+- ALTER `renthouse_records` ADD paid TINYINT, paidA DECIMAL, paidB DECIMAL
+- ALTER `renthouse_water_records` ADD paidA, paidB(原本只有 paid)
+- API 加 `electric_set_paid`、`set_paid_amount`
+- 電費歷史總覽 + 主歷史表加 paid checkbox / icon(對齊水費 UI)
+- 修 `editRecord` 編輯時 paid 保留
+
+**Phase 2 — 合計頁籤從空白實作**
+- 三模式 toggle:🔴 未收 / 🟢 已收 / 📅 月份檢視
+- 跨月份聚合未收清單(房客 A、B 各自欠多少一眼看到)
+- 切 tab 自動進「未收」(這才是日常用的)
+- 月份檢視保留印單 / 複製功能
+
+**Phase 3 — 收款記錄(實收金額版,後來砍掉)**
+- 第一版用 實收 input + 💾 記錄 + ✓ 等額結清 + ↩️ 還原
+- 自動算餘額 / 溢繳 / ✓ 等額
+- 「兩戶結」按鈕一鍵結 A+B
+- 但被使用者反饋「太複雜」+「AB 帳分開才對」
+- **大刀重砍** → 改成超精簡版:
+  - 每筆紀錄 = 1 列,2 個獨立 checkbox(A 已收 / B 已收)
+  - 加 1 個「✓ 整筆」按鈕(房客一起付款時用)
+  - 砍掉:實收 input、餘額/溢繳、💾 記錄、✓ 等額結清、✕ 清空、↩️ 還原 modal、◐ 部分繳指示(因為新模型每戶只有「結」或「未結」沒中間態)
+  - `paidA` / `paidB` 從金額型改成 sentinel 用法(= 應收 → 結;NULL → 未結)
+  - `paid` 自動由 `(paidA done AND paidB done)` 推
+
+### 憑證檔(.renthouse_db.cnf)
+
+- 建在 `nas:/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf`(chmod 600,owner admin)
+- Apache 跑 admin user → 可以讀
+- 在 web root 但 Apache 擋 dotfile(HTTP 403 → 不會被 GET)
+- shell 操作改用 `--defaults-file=<cnf>`(避免 ps aux / shell history 洩密碼)
+- api.php 用 `parse_ini_file()` 讀,有 fallback hardcode 防 cnf 缺失
+
+### 抓到的 bug & 設計教訓(這場)
+
+1. **誤導性 toast**:「✓ A 戶結」單獨結 A 時 toast 寫「✅ 已結算 + 標記已收」但實際 paid=0。整段大砍後問題消失
+2. **設計問題比 bug 更嚴重**:第一版收款 UI 6 個按鈕 + 動態餘額 → 使用者直接說「太複雜」。lesson:financial UI 要 stupid simple
+3. **awk balance 偽陽性**:counter 不分辨 JS 字串裡的 `<div>` 跟實際 HTML tag,看到 +1 不見得是 bug。要驗 DOM 結構去 grep `<script>` 邊界或直接看 render
+
+### 還沒做(待下場)
+
+- [ ] 房客 `tenant_log` 寫入(累積到三個 session 了)
+- [ ] 請款報表 PDF 輸出(目前只有列印 / 複製文字)
+- [ ] 多月份累計請款(例如「印 A 戶 115/04~115/06」單)
+- [ ] V3.1 dev 是否 promote 到 production(目前 production V3.0)
+
+---
+
 ## V3.0 — 2026-06-06(Claude Code session,大幅改寫)
 
 ### 🎯 session 目標
