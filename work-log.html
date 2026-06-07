@@ -1,5 +1,212 @@
 # 工作日誌
 
+## V3.2 — 2026-06-07 下午後續(picker / 套入 / cell 鎖定 / 對帳 / 速度)
+
+### 主軸:把記帳變成可信賴的「期別會計系統」
+
+**核心模型(最終定型)**
+- **picker = 本期單據定義**(BALANCE 區的 checkbox 選擇)
+- **cell 已結 = 該戶該筆已付**(記帳 list 裡的 A/B 切換 → 寫 paidA/paidB)
+- **主卡 應繳明細 = picker 單據 − 該戶 cell 已結** = 該戶在本期還欠的
+- **歷史 snapshot = 主卡當下狀態 + picker 完整 record snapshot**(套入時逐欄位比對)
+- **新期 = 清空 picker + 重置所有欄位 + 解鎖**(讓使用者從零開始選新本期單據)
+- **🔒 鎖定 = 所有 input + cell + 日期 都擋,只能按 ✎ 編輯 解鎖**
+
+### 這場走過的曲折(教訓)
+
+1. **F5 沒資料 — switchTab 在 script parse 就跑了**
+   - `switchTab(safeLS('activeTab', 'tenant'))` 在 var declarations 之後立刻執行
+   - waterRecords 還是 `[]`(declared but not yet loaded from localStorage)
+   - → 記帳 tab 渲染空白
+   - **修**:initApp Phase 1 結尾強制 `renderSummary()`(cache 已載完才畫)+ Phase 2 success 也加 `renderOverview()`
+
+2. **電費 F5 沒資料 → 切水費再回來才有**
+   - Phase 2 同步成功時 changed.records 只觸發 renderHistory,沒 renderOverview
+   - 重切 tab 才呼叫 renderOverview → 才看到資料
+   - **修**:Phase 2 success path 加 renderOverview / renderSummary / renderTenants 完整覆蓋
+
+3. **載入太慢**
+   - 原本 `dbLoad` 用 `await fetch` 擋住 initApp
+   - **改 stale-while-revalidate**:Phase 1 直接吃 localStorage cache 渲染(0 ms);Phase 2 背景 fetch,有差異才 re-render + toast 通知
+   - Promise.all 平行三個 fetch(list / tenant_list / draft_load)
+   - **bug 修**:API 回空陣列 + 本地有資料時 **不要覆蓋 localStorage**,反過來 dbSave(localData) 把本地回推到 DB
+
+4. **歷史「沒價值」(11286 元 8 筆混合的 snapshot)**
+   - `_snapshotPaidItems` 之前抓全部 paid=1 紀錄,不分期別
+   - **改用 BALANCE picker 選擇定義「本期」**:儲存只 snapshot 該期勾選的單據
+   - 同步 printInvoice、_renderBalanceCheck、_unitAccount 全部走 picker
+
+5. **「79 哪來」(carryIn stale)**
+   - 主卡 prevVal 從歷史抓,但 rolloverPeriod 還在讀 stale 的 `renthouseCarryover` localStorage
+   - **修**:抽出全局 `_getPrevFromHistory(unit, beforeDate)`,主卡 / rolloverPeriod / printInvoice 三處統一
+
+6. **「59.19999」浮點殘渣**
+   - 計算經過 IEEE 754 → 留 `.19999...`
+   - **修**:儲存時所有金額欄位 `Math.round()`,顯示 input value 也 `Math.round`,edit 時 round on save
+
+7. **「水費月份不對」(套入抓到 6 月不是 4 月)**
+   - id 漂移可能,記錄被編輯過
+   - **改成優先用 billMonth 找 record,id 是備案**
+   - **picker snapshot 升級成 deep-clone 整筆 record**(套入時逐欄位比對,逐 key diff)
+
+8. **「歷史套入後 picker 沒同步」**
+   - 套入只還原 已收/調整/日期,沒還原 picker
+   - **修**:儲存時 `pickerSelection` 進歷史;套入時還原到 localStorage,主卡跟對帳區跟著對齊
+
+9. **「結轉下期 結清 0 但其實該是 79」**
+   - 主卡 dueThis 用 stale prevVal → diff 跟使用者預期不符
+   - 跟 #5 同根源,修了 _getPrevFromHistory 就一致了
+
+10. **z-index 蓋住 customConfirm → 刪除按鈕點不到**
+    - customConfirm modal z-index 1000,但歷史 overlay z-index 9999
+    - confirm modal 被蓋住,onclick 達不到 OK button
+    - **修**:刪除改 press-twice(首次按 toast 警告,5 秒內再按才刪);套入也改成直接 action(無 modal)
+
+11. **picker fallback 干擾 「新期」 流程**
+    - `checkedIds.length === 0` 永遠 fallback 最新一期
+    - 用戶按「新期」想要清空,結果又被填回最新
+    - **修**:用 `localStorage.getItem` 回傳值區分 `null`(從未設定 → fallback 最新)vs `'[]'`(刻意清空 → 尊重)
+    - 🆕 新期 按鈕設 `'[]'` 強制空白,等用戶手動勾選新本期
+
+12. **鎖定狀態 cell 沒擋掉**
+    - 雖然 input disabled,cell `<div onclick>` 沒檢查鎖定
+    - **修**:cell 也看 lockedNow,鎖定時加 🔒 + 淡化 + not-allowed cursor,onclick 改成 showToast 警告
+
+### 對帳區 BALANCE 進化
+
+- **picker / 對帳格式分離**:
+  - 上方:📋 選擇本期單據(checkbox 面板,可摺疊,快速按 📌 最新 / 全選 / 清空)
+  - 下方:🧾 本期對帳 BALANCE(乾淨表格 + 自動 ✓ 拆分檢核)
+- **欄位齊全**:沒選的 kind 顯示「未選 —」placeholder
+- **逐筆列示**(不合併):一筆一行
+
+### 列印單(LINE 截圖友善版)
+
+- max-width 420px,適合手機截圖
+- 漸層 header(戶識別色)+ 卡片化 + 軟陰影
+- 民國日期顯示(115年6月7日)
+- 類型 badge(💧 / ⚡ 用對應顏色 pill)
+- **本期應繳金額** 大字塊
+- ✨ 溢繳 / ⚠️ 缺繳 / ✓ 結清 三態 emoji
+- `@media print` 隱藏按鈕跟陰影,列印乾淨
+
+### 歷史搜尋
+
+- 民國年下拉(從 accountDate 自動抽取)+ 月份下拉(1~12)+ 關鍵字 input,三條件 AND
+- 即時過濾,改 accountDate 會 re-render modal(讓排序立即生效)
+
+### 帳目卡 / 歷史卡 完全對齊
+
+- 同樣的「房客面/房東面」分區
+- 同樣的 大字 本期應繳金額 + 大字 本期溢(缺)繳
+- 同樣的動態加減符號(上期 / 調整 正負動態)
+- 戶識別色淡底 (#eff6ff / #f0fdf4)
+
+### 備份(2026-06-07 下午)
+- NAS:`nas:/share/CACHEDEV1_DATA/Web/renthouse_backups/v3.2_dev_20260607_154904/`(290 KB)
+- 本地:`renthouse/index-dev_v3.2_20260607_154904.html.bak`
+- (上午備份 12:26 也保留,290 → 246 KB 差異就是這場改的量)
+
+### V3.2 還沒 promote(故意)
+
+- production 還是 V3.1(2026-06-06 20:16)
+- dev 用了一整天反覆迭代,還不夠穩
+- 等 user 確認 OK 才 promote(走標準 promote 流程,sw cache v6 → v7)
+
+---
+
+## V3.2 — 2026-06-07 上午(記帳系統重構,房客面/房東面分離 + 列印)
+
+### 主軸:記帳卡片正式定型(經歷十幾輪 UX 大改後)
+
+**最終帳目卡公式(統一符號:正=溢繳/多繳/綠,負=缺繳/少繳/紅)**
+```
+本期應繳金額 = 應繳款 − 上期溢(缺)繳 + 調整
+本期溢(缺)繳 = 實收款項 − 本期應繳金額
+```
+
+**記帳 tab 整體版面**
+- 上排:💧 水費 list (左) | 戶 A 帳目卡 (右)
+- 下排:⚡ 電費 list (左) | 戶 B 帳目卡 (右)
+- 手機 < 540px 全部堆疊單欄
+
+**水費/電費 list cell 風格**
+- 表頭 月份 / 戶 A / 戶 B(checkbox 整個隱藏,點 cell 就切換)
+- **未繳**:識別色淡底 + 識別色實邊 + 微陰影(搶眼)
+- **已繳**:白底 + 灰細邊 + 識別色字 + **底線** + ✓(完成標記)
+- 月份欄底下加日期副標(電費=起訖日,水費=抄表日民國)
+
+**帳目卡分區**(這場最重要的設計決定)
+- 🔵 **應繳區**(實心邊框):應繳明細 → 應繳款 → 上期折抵 → 調整 → 本期應繳金額(大字 28px)
+- ⚪ **收款結算區**(灰底虛線):實收款項 → 本期溢(缺)繳
+- 🖨 **列印按鈕** 兩塊都出在通知單上(因為房客也要知道扣抵後欠多少 / 多匯了多少會折抵下期)
+
+**符號動態顯示**(視覺反映加減)
+- 上期 = 溢繳(正)→ 顯示「− 上期溢繳 X」綠,本期應繳減少
+- 上期 = 缺繳(負)→ 顯示「+ 上期缺繳 |X|」紅,本期應繳增加
+- 調整 = 正 → 「+ 調整」、負 → 「− 調整」
+
+**鎖定 / 編輯 模式**
+- 💾 儲存(寫入歷史)→ 鎖定全部 input(disabled + 灰底)
+- ✎ 編輯 → 解鎖
+- 狀態存 `renthouseLocked{A,B}` localStorage
+
+**🖨 列印房客通知單**
+- 新分頁,生成乾淨 invoice
+- 表頭 + 明細表(類型 / 月份 / 日期 / 應繳) + 折抵 / 調整 / **本期應繳金額**(大字底色 = 戶識別色)
+- 自動觸發 window.print()
+- 房客可拿到列印單或 PDF
+
+**繳費歷史(可編輯)**
+- 每張卡 carryIn / received / adjust / carryOut / accountDate 全部 inline input
+- onchange 即時 localStorage 寫入(`updatePaymentHistoryField`)
+- 🗑️ 單筆刪除(依 settledAt 定位,不用 idx 避免錯位)
+
+**localStorage keys 一覽**
+```
+renthouseCarryover{A,B}      上期溢(缺)繳  正=溢/負=缺
+renthouseReceivedThis{A,B}   本期實收
+renthouseAdjust{A,B}         調整  正=補/負=折
+renthouseAccountDate{A,B}    記帳日期  YYYY-MM-DD(預設今天)
+renthouseLocked{A,B}         '1'=鎖定,其他=可編輯
+renthousePaymentHistory      結算歷史 [{unit, settledAt, accountDate, carryIn, received, adjust, carryOut, paidItems, totalPaidDue}, ...]
+```
+
+**色彩識別 (整個專案統一)**
+| 角色 | 顏色 | hex |
+|-----|------|-----|
+| 戶 A | 藍 | `#4A6FA5` |
+| 戶 B | 綠 | `#2E7D32` |
+| 水費 | 藍 | `#0284c7` |
+| 電費 | 橘 | `#ea580c` |
+| 未繳/缺繳 | 紅 | `#dc2626` |
+| 溢繳/完成 | 綠 | `#16a34a` |
+
+### 抓到的 bug(這場)
+
+1. **IIFE 多單引號 → 整個 script 死掉**:用 `(function(){...})()` 動態生 HTML 時,結尾不小心多打 `'` 字符,瀏覽器 SyntaxError 整頁當機。**修**:`node -e "new Function(scriptCode)"` 預檢 parse。**準則加**:任何 inline IIFE 修改後一定要 deploy 前 node-parse 驗證。
+
+2. **customConfirm modal 阻擋儲存**:第一版「儲存」按鈕跳 customConfirm 確認,使用者錯過或誤關 → 沒寫入歷史,以為按了沒效果。**修**:儲存改成直接寫(無 modal),用 toast 回饋。**準則加**:用戶反覆觸發的動作不應插 confirm,顯示明確 toast 比 modal 友善。
+
+3. **符號 convention 混亂**:從 v3.1 開始就有「上期是 credit 還是 debt」、「diff 正號是 缺 還是 溢」反覆翻轉。最終定:全專案 **正 = 溢繳 / 多繳 / 綠**,負 = 缺繳 / 少繳 / 紅。**準則加**:financial UI 一定要 UPFRONT 定 sign convention,文檔化,所有顯示對齊。
+
+4. **更新歷史時 index 錯位**:`deletePaymentHistory(idx, unit)` 用 array index 定位,刪掉後 render 重排 → 下次點 idx 對應錯筆。**修**:改用 settledAt ISO timestamp 當穩定 ID。
+
+### 還沒做(待下場)
+
+- [ ] 把 V3.2 從 dev 沙盒 promote 到 production
+- [ ] 繳費歷史 sync 到 NAS DB(目前只 localStorage)
+- [ ] 房客 `tenant_log` 寫入(累積 4 個 session 了)
+- [ ] 多月份合併請款單(目前列印一次只能印當下未繳的)
+- [ ] 列印單加房東匯款資訊(銀行帳號等)
+- [ ] 列印單也含 ROC 民國日期顯示選項
+
+### 備份(2026-06-07)
+- NAS sandbox snapshot:`nas:/share/CACHEDEV1_DATA/Web/renthouse_backups/v3.2_dev_<ts>/index-dev.html`
+- 本地 `.bak`:`renthouse/index-dev_v3.2_<ts>.html.bak`
+
+---
+
 ## V3.1 — 2026-06-06 晚場(收款 + 合計 + 憑證 cnf)
 
 ### 主軸:合計頁籤 / 請款收款流

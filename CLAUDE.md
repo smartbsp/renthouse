@@ -31,6 +31,157 @@ scp index-dev.html nas:/share/CACHEDEV1_DATA/Web/renthouse-dev/index.html
 歷史 promote 紀錄:
 - 2026-06-06 上午:V3.0 promote(commit `8f344c5`,sw cache v4→v5)
 - 2026-06-06 晚上:V3.1 promote(commit `ddaff1e`,sw cache v5→v6)
+- 2026-06-07:V3.2 dev 完成(記帳系統重構);production 尚未 promote
+
+---
+
+## 記帳系統(V3.2 — 2026-06-07 下午定型,集 30+ 輪迭代後)
+
+### 整體版面(記帳 tab)
+```
+┌─ 💧 水費 list ──┐ ┌─ 戶 A 帳目卡 ──┐
+│ 月份 / 戶A/戶B │ │ 房客面 + 房東面 │
+│ (checkbox cell)│ │ 含 🖨 列印     │
+└────────────────┘ └─────────────────┘
+┌─ ⚡ 電費 list ──┐ ┌─ 戶 B 帳目卡 ──┐
+│                │ │                 │
+└────────────────┘ └─────────────────┘
+```
+- 寬 ≥ 540px 並排;手機堆疊單欄(`flex:1 1 280px;min-width:280px;flex-wrap:wrap`)
+
+### 核心公式(全 unified sign convention)
+```
+本期應繳金額 = 應繳款 − 上期溢(缺)繳 + 調整
+本期溢(缺)繳 = 實收款項 − 本期應繳金額
+```
+**符號統一:正 = 溢繳 / 多繳 / 綠;負 = 缺繳 / 少繳 / 紅**(全專案一致)
+
+### 帳目卡分區(輸入欄分區,但列印時兩塊都給房客)
+- 🔵 **應繳區(實心邊框)**
+  - 📋 應繳明細(只列勾選未繳的)+ 🖨 列印按鈕
+  - 應繳款 → 上期折抵(動態 ± 符號)→ 調整(動態 ± 符號)→ **本期應繳金額(大字 28px)**
+- ⚪ **收款結算區(灰底虛線)**
+  - 🧾 收款結算(列印時也會給房客)
+  - 實收款項 input → 本期溢(缺)繳
+- 🖨 **列印**:應繳區明細 + 收款結算(實收 + 本期溢/缺繳)全部出在通知單上,讓房客知道扣抵後還欠多少 / 或這期多匯了會折抵下期
+
+### 動態加減符號顯示
+- 上期 > 0(溢繳)→ 顯示「**−** 上期溢繳 X」(綠色,減少本期應繳)
+- 上期 < 0(缺繳)→ 顯示「**+** 上期缺繳 |X|」(紅色,增加本期應繳)
+- 調整 > 0 → 「**+** 調整」(補繳)
+- 調整 < 0 → 「**−** 調整」(折讓)
+- 0 → 隱藏值(只顯示 placeholder)
+
+### 鎖定 / 編輯 機制(V3.2 加強)
+- 💾 **儲存(寫入歷史)** 按鈕:直接寫入歷史 + 鎖定所有 input(不彈 confirm — z-index 衝突 + UX 直接)
+- ✎ **編輯** 按鈕:解鎖
+- 🆕 **新期** 按鈕(綠色,標題右上):一鍵清空 picker + 重置所有 input + 解鎖,從零開始新期
+- **鎖定時擋什麼**:
+  - 所有 input(上期 / 調整 / 實收 / 記帳日期 / 繳款日期)→ disabled + 灰底
+  - 記帳 list 的 cell 切換 → 加 🔒 + 淡化 + cursor:not-allowed + onclick 改 toast 警告
+  - 不擋:📋 歷史 / 🖨 列印 / picker 勾選(這些不影響該戶帳目)
+- 狀態:`renthouseLocked{A,B}` localStorage(`'1'` = 鎖定)
+
+### 套入(loadPeriodToCard)— 逐欄位比對版
+1. 找歷史該筆(by settledAt)
+2. 對 pickerSelection 每筆 reconcile:
+   - 優先用 `billMonth` 找現在的 record(billMonth 是 user 信賴的 anchor)
+   - billMonth 找不到 → fallback 用 id
+   - 都找不到 → 警告「紀錄已刪」
+3. 找到 record 後,**逐欄位 diff**:
+   - 摘要四欄:月份 / 總額 / A額 / B額
+   - 完整 record snapshot 逐 key diff(跳過 paid/paidA/paidB/id)
+4. 寫回 localStorage:received / adjust / accountDate / payDate / unlock
+5. 重建 picker(fixedPicker)寫入 `renthouseBalanceCheckedIds`
+6. 有差異 → alert 列出每筆每欄差異 + toast 警告;全對 → toast 「X 筆對齊」
+
+### Stale-While-Revalidate(SWR)載入
+- `initApp` 重構成兩段:
+  - **Phase 1**(同步,從 localStorage):立刻 render History / Overview / Tenants / Summary / restoreForm
+  - **Phase 2**(背景,Promise.all 平行):fetch list / tenant_list / draft_load → 有差異才 re-render + toast「🔄 NAS 同步完成 (Xms)」
+- **防止 cache 被清空**:API 回空陣列 + 本地有資料時不覆蓋,反過來 `dbSave(localData)` 把本地推回 DB
+- 同樣模式套用在 `loadWaterRecords`
+
+### localStorage keys(V3.2 完整版)
+```
+renthouseCarryover{A,B}      DEPRECATED (上期改從歷史抓,這個 key 留著只是 backward compat)
+renthouseReceivedThis{A,B}   本期實收       number(Math.round)
+renthouseAdjust{A,B}         調整          number,正=補/負=折(Math.round)
+renthouseAccountDate{A,B}    記帳日期       'YYYY-MM-DD'(預設今天,寫入 localStorage 確保 rolloverPeriod 不卡)
+renthousePayDate{A,B}        繳款日期       'YYYY-MM-DD'(可空)
+renthouseLocked{A,B}         鎖定狀態       '1'=鎖,其他=可編輯
+renthouseBalanceCheckedIds   BALANCE picker 選擇 [{table, id}]  ※區分 null(從未設定→fallback 最新) vs '[]'(刻意清空→尊重)
+renthouseBalancePickerOpen   '0'/'1' 上方選擇面板摺疊狀態
+renthousePaymentHistory      結算歷史 array
+```
+
+`renthousePaymentHistory` 每筆 schema:
+```js
+{
+  unit: 'A' | 'B',
+  settledAt: ISO timestamp (stable ID, never changes after first save),
+  updatedAt: ISO timestamp (每次 update 都改),
+  accountDate: 'YYYY-MM-DD' (期別 key,跟 unit 組合判斷 same period upsert),
+  payDate: 'YYYY-MM-DD' | '',
+  carryIn, received, adjust, carryOut, totalPaidDue,  // 全 Math.round
+  paidItems: [{ type: '⚡電費'|'💧水費', billMonth, due }],
+  pickerSelection: [{                                  // V3.2 加,套入時逐欄位比對用
+    table, id, billMonth, totalBill, costA, costB,
+    snapshot: { ...整筆 record deep-clone... }
+  }]
+}
+```
+
+### 核心 helper(全局,不再 inline)
+```js
+_getPrevFromHistory(unit, beforeDate)
+  // 從 renthousePaymentHistory 找該戶 accountDate < beforeDate 的最近一筆 carryOut
+  // 主卡 prevVal / rolloverPeriod carryIn / printInvoice 三處統一用
+
+_snapshotPaidItems(unit)
+  // 用 picker 選擇 + 該戶 cell 未結 過濾 = 該期該戶的應繳明細
+  // 條件:due > 0 AND paidA/paidB < due (未結)
+```
+
+### 核心邏輯鏈(必須對齊,不然 history / print 會亂)
+1. **picker = 本期單據定義**(BALANCE 區的 checkbox 選擇)
+2. **cell 已結 = 該戶該筆已付**(記帳 list 裡的 A/B 切換 → 寫 paidA/paidB)
+3. **三條鏈完全對齊**(picker + cell 已結 過濾):
+   - 主卡 應繳明細 (`_unitAccount` `unpaidEntries = entries.filter(!done)`)
+   - 儲存歷史 snapshot (`_snapshotPaidItems` 過濾 `unitPaid < due`)
+   - 列印 invoice (`printInvoice` 過濾 `unitPaid < due`)
+4. **歷史 snapshot 含 picker deep-clone**(套入時逐欄位比對 + 警告 mismatch)
+
+### 列印房客通知(printInvoice)
+- `window.open('', '_blank')` 開新分頁
+- 生成 standalone HTML(含內嵌 CSS,字型 Microsoft JhengHei)
+- 內容:標題 + 記帳日期 + 明細表(類型/月份/日期/應繳)+ 折抵/調整 + 大字本期應繳
+- 自動 `window.print()`
+- 只導出房客面內容(房東記帳數字不洩漏)
+
+### 繳費歷史(可編輯)
+- `viewPaymentHistory(unit)` → overlay modal
+- 每筆 carryIn / received / adjust / carryOut / accountDate 全 inline input
+- onchange 即觸發 `updatePaymentHistoryField(settledAt, field, val, asString?)`
+- 刪除:🗑️ → `deletePaymentHistory(settledAt, unit)`(用 settledAt 而非 idx,避免錯位)
+
+### 色彩識別(全專案統一)
+| 角色 | 顏色 | hex | 用在 |
+|-----|------|-----|------|
+| 戶 A | 藍 | `#4A6FA5` | A 戶 帳目卡、checkbox label、cell 邊框 |
+| 戶 B | 綠 | `#2E7D32` | B 戶 帳目卡、checkbox label、cell 邊框 |
+| 水費 | 藍 | `#0284c7` | 水費區塊邊框/標題 |
+| 電費 | 橘 | `#ea580c` | 電費區塊邊框/標題 |
+| 未繳/缺繳 | 紅 | `#dc2626` | 缺繳 label、未繳 emphasis |
+| 溢繳/完成 | 綠 | `#16a34a` | 溢繳 label、已收 input 邊框 |
+
+> A 戶藍跟水費藍是不同色階(A 較深、水費較鮮),不會混淆。
+
+### 記帳 cell 風格(水費/電費 list)
+- 表頭:月份 | 戶 A | 戶 B(checkbox 完全 `display:none`,整個 cell 是 click target)
+- **未繳**:識別色淡底 + 識別色實邊 + 微陰影(`box-shadow`,搶眼)
+- **已繳**:白底 + 灰細邊 + 識別色字 + `text-decoration:underline` + ✓
+- 月份欄底加日期副標(電費=`r.period`,水費=`fmtMinguo(r.readDate)`)
 
 ---
 
