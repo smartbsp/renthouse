@@ -3958,7 +3958,9 @@ function rolloverPeriod(unit) {
           totalBill: Math.round(parseFloat(r.totalBill) || 0),
           costA: Math.round(_itemDueA({ table: c.table, r: r })),
           costB: Math.round(_itemDueB({ table: c.table, r: r })),
-          // 整筆 record deep-clone(供 套入 逐欄位比對)
+          // ★ 存 auto-distribute 前的 cell 值(該戶),供 delete 還原用
+          paidA_before: r.paidA == null ? null : (parseFloat(r.paidA) || 0),
+          paidB_before: r.paidB == null ? null : (parseFloat(r.paidB) || 0),
           snapshot: JSON.parse(JSON.stringify(r))
         };
       });
@@ -4469,10 +4471,43 @@ function deletePaymentHistory(settledAt, unit) {
     clearTimeout(_delConfirmTimer);
     _delConfirmTarget = null;
     var history = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+    var targetRec = history.find(function(h) { return h.settledAt === settledAt; });
+
+    // ★ 反向 revert cells:若該 record 是 settle 且有 pickerSelection + paid_before → 還原 cell
+    var revertedCount = 0;
+    if (targetRec && (!targetRec.type || targetRec.type === 'settle') && Array.isArray(targetRec.pickerSelection)) {
+      var elecLs = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+      var waterArr = (typeof waterRecords !== 'undefined' && Array.isArray(waterRecords)) ? waterRecords : JSON.parse(localStorage.getItem('renthouseWaterRecords') || '[]');
+      var apiPromises = [];
+      targetRec.pickerSelection.forEach(function(p) {
+        if (!p || !p.id) return;
+        var paidKey = unit === 'A' ? 'paidA' : 'paidB';
+        var beforeKey = unit === 'A' ? 'paidA_before' : 'paidB_before';
+        if (!(beforeKey in p)) return;  // 舊 record 沒存,跳過
+        var arr = p.table === 'electric' ? elecLs : waterArr;
+        var idx = arr.findIndex(function(x) { return String(x.id) === String(p.id); });
+        if (idx < 0) return;
+        arr[idx][paidKey] = p[beforeKey];  // null or number
+        revertedCount++;
+        if (typeof isNAS !== 'undefined' && isNAS) {
+          apiPromises.push(fetch(API + '?action=set_paid_amount', {
+            method: 'POST',
+            body: JSON.stringify({ table: p.table, id: p.id, unit: unit, amount: p[beforeKey] })
+          }));
+        }
+      });
+      if (revertedCount > 0) {
+        localStorage.setItem('renthouseRecords', JSON.stringify(elecLs));
+        localStorage.setItem('renthouseWaterRecords', JSON.stringify(waterArr));
+        waterRecords = waterArr;
+        if (apiPromises.length > 0) Promise.all(apiPromises).catch(function() { showToast('⚠️ cells revert 本機 OK,NAS 同步部分失敗'); });
+      }
+    }
+
     var newHist = history.filter(function(h) { return h.settledAt !== settledAt; });
     localStorage.setItem('renthousePaymentHistory', JSON.stringify(newHist));
     _walletSyncDelete(settledAt);  // → DB
-    showToast('🗑️ 已刪除 · 預繳餘額已重算');
+    showToast('🗑️ 已刪除' + (revertedCount > 0 ? ' · ' + revertedCount + ' 筆 cells 已還原' : ''));
     var ov = document.getElementById('paymentHistoryOverlay');
     if (ov) ov.remove();
     renderSummary();
@@ -4480,7 +4515,7 @@ function deletePaymentHistory(settledAt, unit) {
     viewPaymentHistory(unit);
   } else {
     _delConfirmTarget = settledAt;
-    showToast('⚠️ 再按一次 🗑️ 確定刪除');
+    showToast('⚠️ 再按一次 🗑️ 確定刪除(會自動 revert cells)');
     clearTimeout(_delConfirmTimer);
     _delConfirmTimer = setTimeout(function() { _delConfirmTarget = null; }, 5000);
   }
