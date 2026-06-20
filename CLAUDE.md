@@ -32,7 +32,8 @@ scp index-dev.html nas:/share/CACHEDEV1_DATA/Web/renthouse-dev/index.html
 - 2026-06-06 上午:V3.0 promote(commit `8f344c5`,sw cache v4→v5)
 - 2026-06-06 晚上:V3.1 promote(commit `ddaff1e`,sw cache v5→v6)
 - 2026-06-07 下午:V3.2 promote(commit `8a8de67`,sw cache v6→v7)— 記帳系統最終定型
-- 2026-06-20 下午:**V3.3 promote**(commit `a52049e`,sw cache v7→v8)— picker 脫鉤 + 自動分配實收 + 歷史條列式
+- 2026-06-20 下午:V3.3 promote(commit `a52049e`,sw cache v7→v8)— picker 脫鉤 + 自動分配實收 + 歷史條列式
+- 2026-06-20 晚上:**V3.6 promote**(commit `cc5247e`,sw cache v8→v9)— 跳過 V3.4/V3.5(都只在 dev iterate);**會計模型重設計** 雙 ledger 分離 + DB 持久化 wallet 歷史 + 換約/續約/結清 + per-unit 防干涉 + 房東 audit 查詢
 
 ---
 
@@ -134,7 +135,56 @@ ssh nas "readlink -f /share/CACHEDEV1_DATA/Web/renthouse_backups/db/<file>.sql.g
 
 ---
 
-## 🎯 記帳系統 顯示+邏輯 共識(V3.4,2026-06-20 — 預繳帳戶模型)
+## 🎯 記帳系統 顯示+邏輯 共識(V3.6,2026-06-20 promote — 雙 ledger + DB 持久化)
+
+**V3.6 重設計核心(取代 V3.4/V3.5 模型,真正治本):**
+- **wallet ledger**(cash flow):`Σ history received − Σ history adjust`,只記預繳/提款/結清/結算 received/adjust
+- **bills ledger**(帳單未收):`Σ paid=1 bills cost − Σ cells paid`,獨立計算
+- **淨值** = wallet − bills,顯示房客整體財務狀況
+
+**為什麼這樣分?**
+- 過去模型把 bills 算進 wallet → 同張 bill 結算 2 次就雙重算
+- V3.6 兩條 ledger 完全獨立 → **不可能雙重算**
+- 新 bill 過帳:bills ledger 增加,wallet 不變
+- 房客 cell 已收:bills ledger 減少,wallet 不變
+- 房客預繳 / 提款:wallet 增減,bills 不變
+- 結算 (💾) received:wallet += received,bills 透過 auto-distribute 改 cells
+
+**DB 持久化(V3.6 上 production 才有):**
+- 新表 `renthouse_payment_history`(16 欄,settledAt PK)
+- 4 個 endpoints:`wallet_list` / `wallet_upsert` / `wallet_delete` / `wallet_bulk_import`
+- 前端所有 mutation 都 sync DB(`_walletSyncSave` / `_walletSyncDelete`)
+- localStorage 變成 cache,清掉自動從 DB 拉
+- 唯一永久刪 wallet 歷史的路徑:房東 SQL `DELETE FROM renthouse_payment_history WHERE ...`
+
+**頂部 預繳帳戶 bar(雙 ledger 顯示):**
+```
+戶 A 預繳帳戶  [💰預繳] [💸提款] [📁結清]
+💰 wallet (預繳)              +1000 元
+📋 帳單未收                       0 元
+淨值: +1000 元 (wallet − 未收)
+```
+
+**換約 / 續約 (📁 結清):**
+- 換約 = 新房客接手 → era 界線(新房客 UI 看不到舊資料,但房東切「📜 顯示全部」可 audit)
+- 續約 = 同房客新合約 → 不切 era
+- 認賠/沖銷 = 直接歸 0(不退也不收)
+- 補繳 / 退款 = 金額可改(部分結算)
+
+**per-unit 防干涉:**
+- A 結算過的 bill,B 戶 picker 仍可勾(因 B 還沒結算)
+- picker 列 ⚠️badge 顯示「⚠️A 已 / ⚠️B 已 / ⚠️A+B 已」
+- 手動勾已 settle bill 跳 confirm(雙重防呆)
+
+**房東 audit 查詢:**
+- 頁面最下方,黑底 header 摺疊
+- 跨資料源(電費/水費/wallet 歷史)
+- 戶 / 日期範圍 / 關鍵字 / 單筆 ID / 種類 filter
+- 📥 CSV 匯出(含 UTF-8 BOM,Excel 直開)
+
+---
+
+## 🎯 記帳系統 顯示+邏輯 共識(V3.4,deprecated — 留作歷史參考)
 
 **V3.4 重設計核心**:用「預繳餘額(wallet)」取代「上期溢/缺繳」累積邏輯。每戶一個 running balance,所有 history 紀錄是該 wallet 的 transaction log。
 

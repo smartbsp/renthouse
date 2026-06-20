@@ -1,5 +1,86 @@
 # 工作日誌
 
+## 2026-06-20 晚場 — V3.6 promote(雙 ledger 模型 + DB 持久化 wallet)
+
+### 主軸
+V3.3 上 production 後當天進入「會計模型重設計」漩渦 — 連續迭代 V3.4 (預繳帳戶 wallet)、V3.5 (cash_in − bill_total)、V3.6 (雙 ledger 分離)。**只有 V3.6 promote production**,V3.4/V3.5 都被 V3.6 取代。同時新增 DB 持久化 wallet 歷史。**完成時間:2026-06-20 晚 23:45。**
+
+### 為什麼一天內 3 次重寫會計模型?
+
+| 版本 | 模型 | 為什麼放棄 |
+|---|---|---|
+| V3.3 | 上期/carryIn/carryOut 累積 | 編輯歷史時 cell 已被 auto-distribute 改 → sumDue=0 → 實收變溢繳 |
+| V3.4 | wallet = Σ(received − dueThis − adjust) | 同張 bill 結算 2 次就雙重算進 wallet |
+| V3.5 | wallet = cash_in − bill_total − adjust(bill 從 current 算) | 新 bill 過帳 wallet 立刻 -21944 |
+| **V3.6** | **wallet (cash flow) + bills (帳單未收) 兩條獨立 ledger** | ✅ 解 |
+
+### V3.6 核心(治本)
+- **wallet ledger**: cash flow only(預繳/提款/結清/結算 received/adjust)
+- **bills ledger**: 帳單未收(bill cost − cell paid)
+- 兩條完全獨立 → 不可能雙重算
+- 頂部 bar 顯示:wallet / 帳單未收 / 淨值
+
+### DB 持久化 wallet 歷史(V3.6 同步上)
+- 之前 wallet history 只在 localStorage,清快取就 GG
+- 新表 `renthouse_payment_history`(16 欄,settledAt PK)
+- api.php 加 4 endpoints(wallet_list / wallet_upsert / wallet_delete / wallet_bulk_import)
+- 前端所有 mutation `_walletSyncSave` / `_walletSyncDelete`
+- initApp Phase 2 從 DB sync(空 DB + 本地有 → bulk migration)
+
+### 一天踩到的雷
+
+**雷 1:V3.3 promote 後立刻被用戶報「實收款項不能輸入」、「儲存要按兩下才會儲存 就失真了」**
+- 根因:`onchange` + re-render race。input 沒 blur 就被 re-render 蓋掉
+- 修法:input 改 `oninput`(即時寫 localStorage)+ rolloverPeriod 自己即時算 net + 350ms debounced render
+- 教訓:onchange 在 mutating UI 上有 timing 風險,優先用 oninput
+
+**雷 2:結清 modal radio button 看不到**
+- 根因:全局 `input { appearance: none }` 把 radio 也擦掉,只有 checkbox 加了 fix
+- 修法:加 `input[type="radio"] { appearance: radio !important }`
+- 教訓:全局 reset 後要 case-by-case 加回原生 controls
+
+**雷 3:雙重計算**
+- A 戶 settled w2 → 下次 picker 自動勾 w2 又算進 wallet → 同筆 bill 雙重 deficit
+- 修法 1:`_defaultUnpaidCheckedIds` 加 history dedup
+- 修法 2:per-unit history tracking (`_bIdsSettledBy(unit)`)
+- 修法 3:picker 列 ⚠️badge + toggleBalanceBill confirm
+- **最後修法**:換新模型(V3.5 → V3.6),從架構上消除雙重算可能
+
+**雷 4:V3.5 新模型「wallet 含所有 bills」→ 戶 B 立刻變 -21944**
+- 根因:bill_total 從 current bills 算,paid=1 的 bill 全進 wallet
+- 修法:V3.6 把 bills 拆出 wallet,做成獨立 ledger
+
+**雷 5:wallet 歷史只在 localStorage**
+- 房東 F12 clear → 所有預繳/提款/結清/結算 紀錄全沒
+- 修法:V3.6 加 DB 表 + API + sync code,所有 mutation 都 sync DB
+
+### 對話節奏教訓
+- **「不懂」要立刻換用比喻 + 表格**,別繼續用技術名詞
+- **要 user 信任前 先 deliver 大改動**(V3.6 promote 是基於 user「信任」一個字決定的,但前面舖陳了 8 step 流程清楚才有信任基礎)
+- **用戶反覆「卡關」報告就要重設計,不是 patch**(雙重算 / -21944 / 失真 都是同一個架構問題,patch 3 次後改架構才一勞永逸)
+
+### Promote 流程(8-step 標準)
+- 備份 `pre_v3.6_promote_20260620_234351/`(via NAS Pool 3 symlink)
+- cp index-dev.html → index.html
+- sw.js cache `v8 → v9`, index.html register `v=5 → v=9`(順手對齊 dev 落後號)
+- scp 6 檔上 NAS production
+- git commit + push (`cc5247e`)
+- Google Drive 拷貝 `production_v3.6_promoted_20260620/`
+- curl 驗證 三方 MD5 全對齊(`a98964...`)+ wallet API 通(回 `[]`)
+- 文件 同步(這份 work-log + CLAUDE.md)
+
+### 已做的 test scripts
+- `test_wallet_logic.js` — 19 scenarios / 69 assertions(V3.4 模型測試)
+- `test_picker_dedup.js` — 8 scenarios(V3.6 picker per-unit 測試)
+
+### 待 follow-up(下次 session)
+- [ ] 觀察 user 在 production 用 V3.6 是否順暢(尤其 DB sync)
+- [ ] 看 wallet DB 有沒有真的進記錄(SQL 直接查)
+- [ ] 必要時 補強 test scripts(目前只測核心 helper,UI 互動沒測)
+- [ ] 帳單 / 房客 / 草稿 都已 in DB,只剩 wallet 是這次新加 — 全 SQL 化完成
+
+---
+
 ## 2026-06-20 — V3.3 dev 改寫(picker 脫鉤 + 自動分配實收 + 歷史條列式)
 
 ### 主軸
