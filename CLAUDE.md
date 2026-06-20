@@ -35,6 +35,104 @@ scp index-dev.html nas:/share/CACHEDEV1_DATA/Web/renthouse-dev/index.html
 
 ---
 
+## NAS 備份架構(2026-06-07 晚場設置,跨全專案 infra)
+
+所有專案備份**已統一遷到獨立 RAID 1 pool**(`/share/CACHEDEV3_DATA`,WD Red Plus 4T × 2)。**舊路徑全部保留為 symlink**,manifest.yml 不用改、應用程式 code 不用改。
+
+| 舊路徑(symlink) | 實際位置 | 屬於 |
+|----|----|----|
+| `/share/.../Web/renthouse_backups` | `/share/CACHEDEV3_DATA/backups/renthouse` | renthouse(本專案) |
+| `/share/.../backups/ai_trading` | `/share/CACHEDEV3_DATA/backups/ai_trading` | ai_trading_system |
+| `/share/.../backups/skywin` | `/share/CACHEDEV3_DATA/backups/skywin` | skywin |
+| `/share/.../daywin/backups` | `/share/CACHEDEV3_DATA/backups/daywin` | daywin |
+| `/share/.../VMs/SkywinVM_backups` | `/share/CACHEDEV3_DATA/backups/skywin_vm` | SkywinVM(VirtStation) |
+
+### 重點
+- 新 pool = **Storage Pool 3**(HDD 3 + HDD 4,RAID 1,**4T usable**,共用 4T 安全冗餘)
+- Pool Guaranteed Snapshot Space = **20%**(~745 GB,**2026-06-09 已啟用 GFS snapshot 排程**)
+- BackupVol = **Thick(完整)volume**,~2.9 TB 可用
+- 舊備份保留 `.preBkupMig_*` 後綴目錄,一週後可清(2026-06-14 後)
+- V2.1 時代 `api.php` 寫的 JSON 備份歸檔在 `/share/CACHEDEV3_DATA/backups/renthouse/legacy_v21_json/`
+
+### NAS 硬體配置(2026-06-09 升級後)
+```
+機型:         QNAP TS-464(Intel Jasper Lake)
+RAM:          32 GB(Crucial 16 GB × 2,DDR4 3200 跑 2933)
+              ↳ 2026-06-09 換掉 1 支故障條(上次 32GB 出現當機,疑 RAM)
+
+HDD 1 / HDD 2: WD40EFZX 4 TB × 2     → Pool 1 RAID 1(DataVol1 Static 1.8T,live data)
+HDD 3 / HDD 4: WD40EFZZ 4 TB × 2     → Pool 3 RAID 1(BackupVol Thick 2.9T,備份 + snapshot)
+M.2 PCIe 1:   Micron 238 GB NVMe     → Pool 2 RAID 1(VM_SSD,SkywinVM 在這)
+M.2 PCIe 2:   238 GB NVMe(2026-06-09 新加,跟 1 鏡像)
+```
+
+**Pool 2 RAID 1 遷移(2026-06-09 完成):**
+- 原本 Pool 2 = Single(只 nvme0n1,無冗餘)→ 加 nvme1n1 → RAID 1 鏡像
+- QTS 線上遷移,**SkywinVM 全程沒中斷,MT5 沒掉線**
+- Sync 23 分鐘跑完(NVMe + VM I/O 競爭下),speed 維持 150–345 MB/s
+- 遷移期間蜂鳴器會響(degraded 警示音,正常),完成自動停
+
+**Pool 對照速查:**
+| Pool | RAID | 容量 | Volume | 用途 | snapshot 支援 |
+|----|----|----|----|----|----|
+| 1 (HDD) | RAID 1 | 1.8 T | Static | live data(Web/MySQL) | ❌ Static 不能 snap |
+| 2 (M.2) | RAID 1 | 217 GB | flexible | SkywinVM | ⚠️ 可 snap 但沒設 |
+| 3 (HDD) | RAID 1 | 2.9 T | Thick | 備份 + 時間倒帶 | ✅ GFS 排程中 |
+
+### Snapshot + 時間倒帶機(2026-06-09 設置,Step 1+2 完成)
+
+**架構決策關鍵(踩了原 plan 的雷):**
+- **DataVol1 是 Static volume**(`qcli_storage -p` 確認),Static 不支援 snapshot — 所以原本「Pool 1 上 daily snapshot」**做不到**。In-place 改 Thick 需備份/刪/重建/還原,全停機 4–8 小時,不值得
+- **QNAP SnapReplica 只能跨 NAS**(`qcli_snapreplica -h` flag 全 remote-targeted,沒 local pool 選項),同機 pool-to-pool 用不了
+- **架構改成「Pool 3 為時間倒帶機」** — 用 HBS 3 file-level rsync + Pool 3 BackupVol 自己 snapshot
+
+**每日節奏:**
+```
+02:30  HBS 3 「Pool1_Web_to_Pool3_mirror」自動跑
+       /share/CACHEDEV1_DATA/Web/   →   /share/CACHEDEV3_DATA/backups/web_mirror/
+       (one-way sync,delta-only,~5–10 秒)
+
+03:00  Pool 3 BackupVol 自動 snapshot(GFS:1 小時 / 30 日 / 8 週 / 12 月)
+       抓到剛同步進來的最新 web_mirror,等於整個 Web/ 進入 90 天+ 時間倒帶鏈
+```
+
+**關鍵設定:**
+- 新建 shared folder `backups`(磁碟群組 3 / BackupVol)— HBS 3 才能寫進 Pool 3。原本 2026-06-07 建 Pool 3 沒勾「建 share」是漏洞
+- HBS 3 同步整個 `Web/`(268 MB,10,028 檔),涵蓋 lohastime 主站 + renthouse + renthouse-dev + `.htaccess` + `.renthouse_db.cnf`
+- 首次同步 2026-06-09 19:50 完成,SSH diff 驗證來源 / 目的檔案數一致
+
+**驗證指令:**
+```bash
+# 看 BackupVol snapshot 列表
+ssh nas "mount | grep snapshot/3"
+# → 每天 03:00 多一個 /mnt/snapshot/3/3000N
+
+# 比對 web_mirror 跟 Web/ 一致
+ssh nas "find /share/CACHEDEV1_DATA/Web/ -type f | wc -l"
+ssh nas "find /share/CACHEDEV3_DATA/backups/web_mirror/ -type f | wc -l"
+# → 兩數應該相等(或差 < 10,容許暫時打開的檔案)
+```
+
+### 驗證 manifest dump 確實落到新碟
+```bash
+# 寫進舊路徑
+ssh nas "ls -la /share/CACHEDEV1_DATA/Web/renthouse_backups"
+# → 應顯示 symlink → /share/CACHEDEV3_DATA/backups/renthouse
+
+# 任何 mysqldump 結果用 readlink -f 確認落地
+ssh nas "readlink -f /share/CACHEDEV1_DATA/Web/renthouse_backups/db/<file>.sql.gz"
+# → /share/CACHEDEV3_DATA/backups/renthouse/db/<file>.sql.gz
+```
+
+### 紀律提醒(避免下次踩雷)
+- 變更他人專案的備份路徑時走 **rsync → 檔案數驗證 → atomic rename + symlink**(不直接 mv)
+- 一次只搬一個目錄,跑完驗證再下一個
+- 觸發 manifest 的 dump 步驟前確認 symlink 指對位置(`readlink -f`)
+- **「紀律」邊界 = 不改別人 manifest / 不動別人 code / 不停別人 service**;基礎建設(搬碟、symlink)是合理跨界
+- ~~snapshot 排程 + Vault 是獨立 task~~ → 2026-06-09 完成(HBS 3 + BackupVol snapshot,非 SnapReplica)
+
+---
+
 ## 記帳系統(V3.2 — 2026-06-07 下午定型,集 30+ 輪迭代後)
 
 ### 整體版面(記帳 tab)

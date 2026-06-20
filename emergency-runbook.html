@@ -1,0 +1,523 @@
+# 🚨 緊急應變手冊
+
+> **印出來貼牆。慌的時候 30 秒內找到對應段落。**
+> 最後更新:2026-06-09 晚場(硬體升級:RAM 換條 + Pool 2 升 RAID 1 + 新增「NAS 關不掉」場景)
+
+---
+
+## ⚡ 30 秒先看這裡(panic mode)
+
+| 症狀 | 跳到 |
+|------|------|
+| NAS 開不了機 / 黑屏 / 無回應 | **【1】** |
+| NAS 關不掉 / 一直自己重開(升硬體) | **【1-B】** |
+| 硬碟紅燈 / NAS 嗶嗶叫 | **【2】** |
+| 網站 404 / 502 / 打不開 | **【3】** |
+| 資料庫怪 / API 500 | **【4】** |
+| 檔案不見 / symlink 壞掉 | **【5】** |
+| Claude 不能用 / 我自己上 | **【6】** |
+
+---
+
+## 🔑 關鍵資訊(填空 — 給未來的你)
+
+> **這一段你必須親自補。我(Claude)不知道、也不該知道。**
+
+```
+NAS 型號             : QNAP TS-464 (主機名 DrYang464)
+NAS 內網 IP          : 192.168.0.100  (qvs0 虛擬交換器介面)
+NAS 對外 hostname    : nas  (~/.ssh/config 的 alias → lohastime.com.tw:8022)
+QTS Web UI 網址      : http://192.168.0.100:8080  (內網) / https://lohastime.com.tw:443 (外網)
+QTS admin 帳號       : admin
+QTS admin 密碼       : As$100829
+   ↳ 同時也是 MT5 / VPS ops basic_auth 的密碼（三處共用）
+   ↳ 完整備忘:C:\Users\user\Desktop\skywin\key\shared_password_notes.md
+SSH key 路徑(本機) : C:\Users\user\.ssh\skywin_nas_ed25519
+   ↳ 同一把金鑰連 NAS 與 VM(走 ~/.ssh/config alias 'nas' 與 'vm')
+DB 密碼存放          : NAS 上 /share/CACHEDEV1_DATA/Web/.renthouse_db.cnf (chmod 600)
+路由器                : TP-Link TL-7DR7230
+路由器後台 URL       : http://192.168.0.1 (預設) 或 http://tplinkwifi.net
+路由器後台帳密       : ____________________  ← (請你自己填,我不知道)
+中華電信光世代帳號   : ____________________  ← (請你自己填,我不知道)
+中華電信光世代密碼   : ____________________  ← (請你自己填,我不知道)
+
+VM (Skywin Windows)
+  IP                 : 192.168.0.103
+  MAC (router 預留) : 52:54:00:3B:73:54
+  SSH alias          : ssh vm  (skywin@192.168.0.103)
+  Windows admin      : furay
+  Windows 密碼       : ____________________  ← (請你自己填,我不知道)
+  noVNC 桌面 LAN     : http://192.168.0.100:6080/vnc.html?autoconnect=true&password=Sky2026!
+
+VPS (ops 監控)
+  IP                 : 159.198.75.195
+  外網              : https://ops.lohastime.com.tw/
+  SSH               : ssh -i ~/.ssh/vps_id_ed25519 meet@159.198.75.195
+  basic_auth 帳號   : furay
+  basic_auth 密碼   : As$100829 (同 NAS QTS admin)
+```
+
+### 實體機規格(2026-06-09 升級後)
+- **RAM**:Crucial 16 GB × 2 = **32 GB**(DDR4,2026-06-09 換掉一支故障條)
+- **HDD 1**:WD40EFZX 4TB → **Pool 1 RAID 1**(主資料,放 Web/MySQL)
+- **HDD 2**:WD40EFZX 4TB → **Pool 1 RAID 1**(鏡像)
+- **HDD 3**:WD40EFZZ 4TB → **Pool 3 RAID 1**(備份 + snapshot,2026-06-07 新裝)
+- **HDD 4**:WD40EFZZ 4TB → **Pool 3 RAID 1**(鏡像)
+- **M.2 PCIe 1**:Micron 238 GB NVMe → **Pool 2 RAID 1**(SkywinVM)
+- **M.2 PCIe 2**:238 GB NVMe → **Pool 2 RAID 1**(鏡像,2026-06-09 新裝)
+
+**RAID 1 = 兩顆鏡像,單顆掛掉資料還在。**(這條記牢,慌的時候會救你)
+**現在三個 Pool 全 RAID 1 雙保險**(2026-06-09 升級完成,Pool 2 過去是 Single 無冗餘,SkywinVM 風險高)。
+
+---
+
+## 【1】NAS 開不了機 / 黑屏
+
+### 🛑 動手前先做這 3 件
+1. **不要拔硬碟**
+2. **不要重新初始化**
+3. **拍照** 燈號狀態(Power、Status、LAN、HDD × 4),之後上 QNAP 論壇問會用到
+
+### Step 1 — 看燈號(NAS 前面板)
+| 燈 | 正常 | 怪了 |
+|----|------|------|
+| Power | 恆亮藍 | 不亮 → 電源/變壓器 |
+| Status | 恆亮綠 | 紅 / 閃紅 → 系統異常 |
+| LAN | 閃綠 | 不亮 → 網路線/Switch |
+| HDD 1–4 | 閃綠(讀寫) | 紅 → 跳【2】 |
+
+### Step 2 — 嘗試從電腦連
+從本機 PowerShell:
+```powershell
+ping <NAS_IP>
+ssh nas
+```
+- **ping 通 + ssh 連得上** → 只是 Web UI 卡了,系統還活著 → Step 3
+- **ping 通 + ssh 連不上** → SSH 服務掛 → Step 4
+- **ping 不通** → 網路或主機掛 → Step 5
+
+### Step 3 — SSH 連得上,Web UI 進不去
+```bash
+# 看 system load
+ssh nas "uptime && free -h && df -h"
+
+# 重啟 Web UI(QTS 內建)
+ssh nas "/etc/init.d/Qthttpd.sh restart"
+```
+
+### Step 4 — SSH 也連不上(但 ping 還通)
+從本機 **網頁** 試 Qfinder Pro:
+1. 下載安裝 [Qfinder Pro](https://www.qnap.com/zh-tw/utilities)(QNAP 官方)
+2. 開啟 → 自動掃到區網內 NAS → 看狀態
+3. 若顯示「需要設定」→ **不要按設定**!那是初始化,會清碟
+4. 改按「登入」→ 用 admin 密碼
+
+### Step 5 — ping 不通 / 完全沒回應
+1. **斷電 30 秒重開**(電源鍵長按 5 秒強制關機 → 拔電源線 → 等 30 秒 → 插回 → 開機)
+2. 開機要等 **3–5 分鐘**(QTS 啟動慢,別急著當死掉)
+3. 還是不行 → 用 **QNAP 緊急復原**:[官方教學](https://www.qnap.com/zh-tw/how-to/tutorial/article/qnap-nas-recovery-mode)
+4. 真的硬體死了 → **HDD 1 任一顆** 可以拔出來接 USB 對接器(讀 RAID 1 單碟的工具:[UFS Explorer](https://www.ufsexplorer.com/) 或 Linux Live USB),資料是 ext4 / QTS volume,Linux 可讀
+
+### Step 6 — 主機真的修不好
+- **網站還在嗎?** 不在了。`www.lohastime.com.tw/renthouse/` 會直接掛掉
+- **資料還在嗎?** 在。RAID 1 + Pool 3 備份 + Google Drive promote 備份(三份)
+- **怎麼救?**
+  - 短期:從 Google Drive `G:\我的雲端硬碟\renthouse_backups\production_v*` 找最新版,先把 index.html / api.php 託管到別的 host(中華電信個人網頁、Cloudflare Pages、Vercel)
+  - 中期:買新 NAS,把 HDD 1 + HDD 2 整組插過去(QNAP 同系列可遷),會自動辨識 Pool 1
+
+---
+
+## 【1-B】NAS 關不掉 / 一直自己重開(升硬體時會遇到)
+
+### 症狀
+- 用 SSH `/sbin/poweroff` 或 `sudo poweroff` 後,NAS 短暫關閉
+- 1–2 分鐘內 NAS **自己重開**(Power LED 又亮、Status LED 又閃綠)
+- 想拔電也來不及,LED 還沒滅完它又啟動
+
+### 根本原因
+QTS 的「**電源回復**」設定預設 = **`POWER_ON`(總是開機)**。
+- SSH `/sbin/poweroff` 直接觸發 BIOS 級 ATX 斷電
+- BIOS 把這個看成「**意外斷電**」,不是使用者主動關
+- → 觸發 Power Recovery = POWER_ON → 自動再開機
+
+### 正確關機方式(3 選 1)
+
+**方式 A:用 QTS Web UI 關機(最簡單,推薦)**
+1. 瀏覽器進 `http://192.168.0.100:8080`
+2. 右上角頭像 → **「關機」** → 確認
+3. Web UI 關機走「軟關機」flag,BIOS 知道是使用者主動關,不會觸發 Power Recovery
+4. 等 LED 全滅 → 拔電 → 想搞多久搞多久,不會自己再開
+
+**方式 B:先改 Power Recovery 設定,再 SSH 關**
+1. QTS 控制台 → **系統** → **電源** → **配置**
+2. 「**系統當機 / 斷電 → 系統啟動**」設定改成 **「保持上次的狀態」(LAST_STATE)** 或 **「關閉」(POWER_OFF)**
+3. 套用後再 SSH `poweroff` 就會真的關
+4. ⚠️ 之後插電進來,LAST_STATE = 看你關時是 ON 還 OFF / POWER_OFF = 一定要手動按電源鍵才開
+
+**方式 C:長按電源鍵 + 立刻拔電(粗暴但確定)**
+1. 長按 NAS 前面板電源鍵 **5–10 秒** → BIOS 級強制斷電
+2. LED 一滅 **立刻拔背面電源線**(秒級)
+3. 因為線拔了,Power Recovery 沒得觸發,NAS 留在斷電狀態
+4. ⚠️ 「立刻」是真的「立刻」 — Power Recovery 觸發 boot 只需要 1–2 秒
+
+### 為什麼 2026-06-09 這場踩雷
+- 我(Claude)第一次提的指令是 `ssh nas "sudo poweroff"` — 在 QNAP 上 `sudo` 不存在,silent fail 第一次沒關到
+- 第二次用 `/sbin/poweroff` 真的關了,但 Power Recovery = POWER_ON 把它叫醒了
+- 教訓:**QNAP 上關機優先用 Web UI**,SSH `poweroff` 是 BIOS 級操作,要配合 Power Recovery 設定
+
+### 一勞永逸建議
+升硬體前,先把 Power Recovery 改成 **`POWER_OFF`** 或 **`LAST_STATE`** → 之後 SSH `poweroff` 也能放心關 → 升完硬體再改回 POWER_ON(或就維持 LAST_STATE,通常是最聰明的)。
+
+---
+
+## 【2】硬碟紅燈 / NAS 嗶嗶叫
+
+### 🛑 第一原則:**不要急著拔!**
+RAID 1 = 鏡像,單顆掛掉資料還在。**亂拔可能把好的也搞壞。**
+
+### Step 1 — 確認是哪一顆紅燈
+NAS 前面板有 4 個 HDD 燈,**從上到下** 是 HDD 1 / 2 / 3 / 4。
+- HDD 1 或 HDD 2 紅 → **Pool 1 出事**(主資料,優先處理)
+- HDD 3 或 HDD 4 紅 → **Pool 3 出事**(備份,網站不受影響,可以慢慢來)
+
+### Step 2 — 開 Web UI 看詳細狀態
+1. 瀏覽器開 `http://<NAS_IP>:8080`
+2. 主選單 → **儲存與快照總管**(Storage & Snapshots)
+3. 左側 → **硬碟 / VJBOD** → 看哪顆是 ❗ 或 ⚠️
+4. 點開那顆 → 看「健康度」是 `Warning` / `Error` / `Failed`
+
+### Step 3 — SSH 跑 SMART 確認
+```bash
+# 看所有碟的型號 + 序號 + SMART 健康
+ssh nas "qcli_storage -d"
+
+# 跑完整 SMART 報告(換 X 成壞掉那顆,sda/sdb/sdc/sdd)
+ssh nas "smartctl -a /dev/sdX"
+```
+重點看:
+- `Reallocated_Sector_Ct`(壞軌數)→ > 0 就該換
+- `Current_Pending_Sector` → > 0 警報
+- `SMART overall-health` → `PASSED` 還可撐,`FAILED` 立刻換
+
+### Step 4 — 嗶嗶叫怎麼關
+Web UI → 控制台 → 系統 → 硬體 → 蜂鳴器 → 「停用警告音」(只是消音,問題還在)
+
+### Step 5 — 換碟流程
+1. **先備份**(雖然 RAID 1 還在,但換的過程有風險):
+   ```bash
+   # 觸發一次完整 mysqldump
+   ssh nas "/usr/local/mariadb/bin/mysqldump --defaults-file=/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf lohastime > /share/CACHEDEV1_DATA/Web/renthouse_backups/db/emergency_$(date +%Y%m%d_%H%M%S).sql"
+   ```
+2. **買同型號**:
+   - Pool 1 壞 → WD40EFZX(WD Red Plus 4TB CMR,**不要買 SMR**)
+   - Pool 3 壞 → WD Red Plus 4T(WD40EFPX 或 WD40EFZX,同系列)
+3. **熱插拔**(QTS 支援):
+   - Web UI → 儲存與快照 → 硬碟 → 點壞掉那顆 → **動作 → 安全卸載**
+   - 燈滅後 → 拔出 → 插新碟
+   - QTS 自動偵測 → 跳出「加入 RAID」對話 → 確認
+   - **Rebuild 開始**(4TB 大約 8–12 小時,期間 NAS 慢但可用)
+
+### Step 6 — Rebuild 期間注意
+- **不要關機、不要重開**
+- **不要再動另一顆碟**(若另一顆也掛 = RAID 1 全毀)
+- 進度查:Web UI → 儲存與快照 → 儲存池 → Pool X → 顯示 %
+- 完成後跑一次 SMART scan 確認新碟健康
+
+### Step 7 — Pool 3 壞掉的特例
+Pool 3 只是備份,**Pool 1 沒事的話網站照常**。換碟不急,但要記得:
+- 期間 manifest dump 仍會寫進 symlink(`/share/CACHEDEV1_DATA/Web/renthouse_backups`)
+- 但 Pool 3 degraded(單碟)→ 寫得進去,只是沒鏡像保護
+- **同時間最好別動 Pool 1**,單一故障點變多
+
+---
+
+## 【3】網站 404 / 502 / 打不開
+
+### Step 1 — 確認是哪邊掛
+從本機:
+```powershell
+# DNS 還在嗎
+nslookup www.lohastime.com.tw
+
+# HTTP 回應碼
+curl -I https://www.lohastime.com.tw/renthouse/
+```
+- **404** → 檔案不見 → 跳【5】
+- **502 / 503** → 後端服務掛 → Step 2
+- **完全 timeout** → 網路或 NAS 整個掛 → 跳【1】
+- **DNS 解析失敗** → 跟 NAS 無關,是 DNS / 域名問題
+
+### Step 2 — SSH 進 NAS 看服務
+```bash
+ssh nas
+
+# 看 Web Station / nginx 還在嗎
+ps aux | grep -E "nginx|php-fpm|apache" | grep -v grep
+
+# 重啟 Web Station
+/etc/init.d/Qthttpd.sh restart
+
+# 看 nginx error log(QTS 位置)
+tail -50 /var/log/nginx/error.log
+# 或
+find /var/log -name "*error*" -mmin -60
+```
+
+### Step 3 — PHP 掛了
+```bash
+# 看 php-fpm 還在嗎
+ps aux | grep php-fpm
+
+# QTS 重啟 PHP(透過 Web Station UI 比 SSH 穩)
+```
+Web UI → App Center → Web Station → 停用 → 啟用(這會把 PHP-FPM 一起重啟)
+
+### Step 4 — 檢查 index.html / api.php 還在
+```bash
+ssh nas "ls -la /share/CACHEDEV1_DATA/Web/renthouse/"
+```
+應該要看到:`index.html`、`api.php`、`sw.js`、`manifest.json`、`icon-*.png`
+
+**有檔案不見** → 跳【5】
+
+### Step 5 — Service Worker 快取問題(假性故障)
+症狀:你看是舊版,別人看是新版。**這不是故障,是 SW 快取沒更新。**
+- 解法:瀏覽器 DevTools → Application → Service Workers → Unregister → 重新整理
+- 確認版本對:`curl https://www.lohastime.com.tw/renthouse/sw.js | grep CACHE_NAME`
+
+---
+
+## 【4】MySQL 連不上 / API 500
+
+### Step 1 — 確認 MariaDB 還活著
+```bash
+ssh nas "ps aux | grep mariadb | grep -v grep"
+```
+- 有 process → Step 2
+- 沒 process → Step 3
+
+### Step 2 — 服務在但連不到
+```bash
+# 用 cnf 試連(密碼藏在 .cnf 裡,不會洩漏)
+ssh nas "/usr/local/mariadb/bin/mysql --defaults-file=/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf lohastime -e 'SHOW TABLES'"
+```
+應該看到 5 個 table:`renthouse_records`、`renthouse_water_records`、`renthouse_tenants`、`renthouse_tenant_log`、`renthouse_drafts`
+
+**錯誤是 `Access denied`** → 密碼變了或 .cnf 被改 → Step 4
+**錯誤是 `Can't connect to server`** → service 沒起來 → Step 3
+
+### Step 3 — MariaDB 服務沒起來
+Web UI → App Center → MariaDB 5 → 啟動 / 重新啟動
+
+或 SSH:
+```bash
+# QTS 上 MariaDB 是 QPKG
+/etc/init.d/MariaDB10.sh restart
+```
+
+### Step 4 — .cnf 檔被改 / 不見
+```bash
+ssh nas "ls -la /share/CACHEDEV1_DATA/Web/.renthouse_db.cnf"
+# 應該是 -rw------- (chmod 600), owner march_2011
+```
+不見了的話,重建:
+```bash
+ssh nas "cat > /share/CACHEDEV1_DATA/Web/.renthouse_db.cnf << 'EOF'
+[client]
+user=march_2011
+password=<填密碼>
+host=localhost
+port=3306
+EOF
+chmod 600 /share/CACHEDEV1_DATA/Web/.renthouse_db.cnf"
+```
+> 密碼在 `api.php` 裡有硬編碼一份(legacy),`ssh nas "grep -i password /share/CACHEDEV1_DATA/Web/renthouse/api.php"` 可以撈出來
+
+### Step 5 — 資料壞了 / 表結構爛了
+**最近的 dump 在哪:**
+```bash
+ssh nas "ls -lt /share/CACHEDEV1_DATA/Web/renthouse_backups/db/ | head -10"
+```
+
+**還原一個表(以 renthouse_water_records 為例):**
+```bash
+# 先備份「現在的爛資料」(萬一還原也錯,還能回來)
+ssh nas "/usr/local/mariadb/bin/mysqldump --defaults-file=/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf lohastime renthouse_water_records > /tmp/before_restore_$(date +%s).sql"
+
+# 還原
+ssh nas "gunzip -c /share/CACHEDEV1_DATA/Web/renthouse_backups/db/<檔名>.sql.gz | /usr/local/mariadb/bin/mysql --defaults-file=/share/CACHEDEV1_DATA/Web/.renthouse_db.cnf lohastime"
+```
+
+---
+
+## 【5】檔案不見 / symlink 壞掉
+
+### 2026-06-07 後的路徑對照(很重要)
+```
+舊路徑(symlink)                              真實位置(Pool 3)
+─────────────────────────────────────────    ────────────────────────────────
+/share/CACHEDEV1_DATA/Web/renthouse_backups  → /share/CACHEDEV3_DATA/backups/renthouse
+/share/CACHEDEV1_DATA/backups/ai_trading     → /share/CACHEDEV3_DATA/backups/ai_trading
+/share/CACHEDEV1_DATA/backups/skywin         → /share/CACHEDEV3_DATA/backups/skywin
+/share/CACHEDEV1_DATA/daywin/backups         → /share/CACHEDEV3_DATA/backups/daywin
+/share/CACHEDEV1_DATA/VMs/SkywinVM_backups   → /share/CACHEDEV3_DATA/backups/skywin_vm
+```
+
+### Step 1 — 驗證 symlink 還在
+```bash
+ssh nas "ls -la /share/CACHEDEV1_DATA/Web/renthouse_backups"
+# 應該看到 -> /share/CACHEDEV3_DATA/backups/renthouse
+
+ssh nas "readlink -f /share/CACHEDEV1_DATA/Web/renthouse_backups"
+# 應該顯示 /share/CACHEDEV3_DATA/backups/renthouse
+```
+
+### Step 2 — symlink 斷了(指到不存在的地方)
+**最可能原因:Pool 3 沒掛載 / 整個掛掉。** 跳【2】處理硬碟,別動 symlink。
+
+如果 Pool 3 OK 但 symlink 被誤刪,重建:
+```bash
+ssh nas "ln -s /share/CACHEDEV3_DATA/backups/renthouse /share/CACHEDEV1_DATA/Web/renthouse_backups"
+```
+
+### Step 3 — 還原優先順序(2026-06-09 後新增 mirror + snapshot)
+
+從**最新最快** → **最舊保底** 依序試:
+
+```
+1. Pool 3 web_mirror   ← 最多差 24 小時(02:30 同步),整包 Web/ 完整
+2. Pool 3 snapshot     ← 最多差 24 小時(03:00 拍),可倒帶 90+ 天任一天
+3. Google Drive         ← 最後一次 promote 的版本(可能差好幾週)
+4. 本機 Desktop git    ← 任何 commit 版本
+```
+
+### Step 3-A — 從 Pool 3 web_mirror 還原(最快)
+```bash
+# 看 mirror 內容(應該跟 Web/ 一模一樣,前 24 小時的狀態)
+ssh nas "ls /share/CACHEDEV3_DATA/backups/web_mirror/renthouse/"
+
+# 整包還原 renthouse 資料夾
+ssh nas "rsync -av /share/CACHEDEV3_DATA/backups/web_mirror/renthouse/ /share/CACHEDEV1_DATA/Web/renthouse/"
+
+# 只還原單檔
+ssh nas "cp /share/CACHEDEV3_DATA/backups/web_mirror/renthouse/index.html /share/CACHEDEV1_DATA/Web/renthouse/"
+```
+
+### Step 3-B — 從 Pool 3 snapshot 倒帶(要更舊的版本)
+**Snapshot 自動掛載點:** `/mnt/snapshot/3/<snapshotID>/`
+
+```bash
+# 列出所有可用 snapshot
+ssh nas "ls /mnt/snapshot/3/"
+# → 30001 30002 30003 ...(每天 03:00 多一個)
+
+# 看某 snapshot 的時間(用 mount info)
+ssh nas "mount | grep snapshot/3"
+
+# 從某 snapshot 還原(假設要 30002 那天的 index.html)
+ssh nas "cp /mnt/snapshot/3/30002/backups/web_mirror/renthouse/index.html /share/CACHEDEV1_DATA/Web/renthouse/"
+
+# 列某 snapshot 內 renthouse 的所有檔案
+ssh nas "ls -la /mnt/snapshot/3/30002/backups/web_mirror/renthouse/"
+```
+
+**GFS 保留鏈:** 最近 1 小時 + 最近 30 天每天 + 最近 8 週 + 最近 12 月 = 約 1 年內任何時間點都倒得回去。
+
+**從 Web UI 倒帶(比 SSH 安全):**
+1. QTS → 儲存與快照總管 → BackupVol → 快照管理員
+2. 左側清單選你想要的時間點
+3. 上方 **「還原」** 按鈕 → 選擇還原方式:
+   - 整個 volume 還原 → **不要選!** 會覆蓋整個 Pool 3 backups/
+   - 還原指定資料夾 → 選 `backups/web_mirror/renthouse/`
+   - 或用 **「瀏覽」** 進去拉單檔出來
+
+### Step 3-C — 從 Google Drive 還原(終極保底)
+**Google Drive 一定有最近一次 promote 的完整備份:**
+```
+G:\我的雲端硬碟\renthouse_backups\production_v3.2_promoted_2026-06-07\
+```
+找最新一個資料夾 → 用 WinSCP / scp 上傳回 NAS:
+```powershell
+scp "G:\我的雲端硬碟\renthouse_backups\production_v3.2_promoted_2026-06-07\index.html" nas:/share/CACHEDEV1_DATA/Web/renthouse/
+scp "G:\我的雲端硬碟\renthouse_backups\production_v3.2_promoted_2026-06-07\api.php" nas:/share/CACHEDEV1_DATA/Web/renthouse/
+scp "G:\我的雲端硬碟\renthouse_backups\production_v3.2_promoted_2026-06-07\sw.js" nas:/share/CACHEDEV1_DATA/Web/renthouse/
+```
+
+### Step 4 — 我本機(Desktop)的也是備份
+```
+C:\Users\user\Desktop\renthouse\index.html        ← production 對應版本(commit `8a8de67`)
+C:\Users\user\Desktop\renthouse\index-dev.html    ← dev sandbox 最新
+C:\Users\user\Desktop\renthouse\api.php
+C:\Users\user\Desktop\renthouse\sw.js
+```
+本機 git 也是備份 — `git log --oneline` 看歷史,任何 commit 都可以 checkout 回去。
+
+### Step 5 — 重要檔案位置總表
+```
+✅ 一定要有(任一不見就慘)
+   - NAS /share/CACHEDEV1_DATA/Web/renthouse/index.html
+   - NAS /share/CACHEDEV1_DATA/Web/renthouse/api.php
+   - NAS MySQL lohastime DB(5 個 table)
+   - NAS /share/CACHEDEV1_DATA/Web/.renthouse_db.cnf
+
+✅ 備份(自動 + 多重保護,任一不見都還救得回)
+   - Pool 3 /share/CACHEDEV3_DATA/backups/web_mirror/  ← 每日 02:30 整包鏡像
+   - Pool 3 BackupVol snapshot 鏈                       ← 每日 03:00,90+ 天時間倒帶
+   - Pool 3 /share/CACHEDEV3_DATA/backups/renthouse/db/ ← 每日 mysqldump
+   - Google Drive promote 備份                          ← 重大版本時手動拷
+   - 本機 Desktop\renthouse\(git)                       ← 你電腦上的工作 copy
+```
+
+---
+
+## 【6】Claude 不能用 / 我自己上
+
+### 替代資源
+- **ChatGPT / Gemini** — 一樣可以教你跑指令,把這份手冊貼給它當 context
+- **QNAP 官方手冊** — https://www.qnap.com/zh-tw/how-to(分類完整,圖文教學)
+- **QNAP 官方論壇** — https://forum.qnap.com/(英文,有任何硬體錯誤碼直接搜)
+- **QNAP 台灣客服** — 0800-880-555(週一到五,但通常 RMA 比較有用)
+- **PTT MAC 板 / MIS 板** — 中文同好問答
+
+### 把這份手冊餵給其他 AI 的方式
+```
+我有一台 QNAP NAS 出事了。先看我的緊急應變手冊:
+<貼整份手冊>
+
+現在發生的症狀是:____________________
+
+請依照手冊指引一步一步教我。
+```
+
+### 我(Claude)不在的時候,你能自己做的事
+- ✅ SSH 進 NAS:`ssh nas`
+- ✅ 跑這份手冊裡的所有指令(都是 copy-paste)
+- ✅ 看 Web UI 狀態
+- ✅ 換硬碟(熱插拔)
+- ✅ 從 Google Drive 還原網站
+- ⚠️ 改 code → 不建議,等我回來
+- ❌ 重灌 QTS → 千萬不要,會清碟
+
+### 24 小時撐過去就夠
+這份手冊的目標不是讓你變專家,是讓你 **撐到下次能用 Claude 為止**。
+網站掛 24 小時不會死。資料有三份備份。**深呼吸、依步驟、別亂動。**
+
+---
+
+## 📞 真的不行時的求救順序
+
+1. **先把焦慮降下來** — RAID 1 + Pool 3 + Google Drive,你有三份資料
+2. **拍照拍影片** — 燈號、Web UI、錯誤訊息,之後問人會用到
+3. **問 ChatGPT / Gemini** — 把這份手冊貼上去當 context
+4. **QNAP 論壇開帖** — 英文,但回應快
+5. **找懂 Linux 的朋友** — 拔 HDD 1 接電腦讀 ext4,資料可救
+6. **最後:接受網站停機,先救資料,慢慢來**
+
+---
+
+## 🔄 這份手冊要定期維護
+
+每次大改 infra(換碟、改路徑、升 QTS、改 schema)後,**更新這份手冊**。
+不更新 → 半年後就過期 → 出事時更慌。
+
+> 一年沒更新 = 等於沒有。

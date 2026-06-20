@@ -1,5 +1,239 @@
 # 工作日誌
 
+## 2026-06-09 晚場 — NAS 硬體升級(RAM 換條 + 第二支 M.2 + Pool 2 RAID 1)
+
+### 主軸
+今天下午文件 promote 完之後,接著升 NAS 硬體 — 換掉懷疑故障的 RAM 條、加裝第二支 M.2 NVMe、把 Pool 2 從 Single 遷移到 RAID 1。**全程 SkywinVM 不中斷、MT5 沒掉線**。**完成時間:2026-06-09 22:33。**
+
+### 上下文(為什麼要做)
+- 之前 16+16 = 32 GB 設定下 NAS 出現過當機,懷疑某支 RAM 故障 → 今天換一支新的觀察
+- Pool 2 原本只有一支 M.2(238 GB Micron),Single 無冗餘 → SkywinVM 跑在裡面,M.2 掛掉就 game over
+- 趁換 RAM 順便加第二支 M.2 → Pool 2 升 RAID 1 鏡像
+
+### 踩到的雷(這場新發現)
+
+**雷 1:SSH `/sbin/poweroff` 被 Power Recovery 叫醒**
+- 第一輪 Claude 寫 `ssh nas "sudo poweroff"` → QNAP 沒裝 sudo,silent fail
+- 第二輪 `/sbin/poweroff` 真的關了 → 但 BIOS 把直接 poweroff 看成「意外斷電」→ Power Recovery = POWER_ON 觸發,NAS 自動再開機
+- 解法:**QTS Web UI 關機** 是軟關機,BIOS 知道是使用者主動 → 不會 trigger Recovery
+- 教訓:已寫進 emergency-runbook 【1-B】「NAS 關不掉 / 一直自己重開」場景
+
+**雷 2:ops 健康檢查 boot race 連鎖**
+- NAS 重開後 ops 在 boot 過程中跑健康檢查,各專案還沒站起來就被檢查 → 一片紅
+  - lohastime:Step 2/7 `autorun.sh` 不存在(長期狀態,獨立議題,已記 memory)
+  - lohastime:Step 6/11 MariaDB socket 還沒生成 → 連不到
+  - skywin:VM 沒自動起來(VirtStation 預設不 auto-start VM)
+- 對策:`virsh start SkywinVM` 把 VM 拉起來 → MT5 / 自動下單恢復 → ops 重跑全綠
+- 教訓:**長期應修** SkywinVM 設 「Host 開機時自動啟動」,免得每次 NAS 重開都要手動
+
+**雷 3:遷移精靈第一輪沒實際送出**
+- 第一輪走完 wizard 按「完成」,但 `qcli_storage` 顯示 md2 還是 single、nvme1n1 還是 free → migration 沒啟動
+- 推測:精靈最後一頁的「套用 / 開始」沒按到
+- 對策:重做一次精靈,這次盯緊最後一個按鈕
+- 教訓:**UI 精靈最後一步要明確驗證「真的有送出」**,不能信「視窗關掉了 = 成功了」
+
+### 最終 Pool 2 RAID 1 遷移技術細節
+```
+原狀態:Pool 2 = Single,只 nvme0n1(238 GB Micron)
+動作:  加 nvme1n1(同型 238 GB)→ QTS 遷移 RAID 群組 → 目標 RAID 1
+方法:  QTS 線上遷移(不停 VM)
+時程:  22:10 啟動 → 22:33 完成,共 23 分鐘
+速度:  start 345 MB/s → mid 151 MB/s(VM I/O 競爭)
+驗證:  md2 = [2/2] [UU] 全綠;qcli_storage 兩支 RAID 1
+影響:  SkywinVM 全程運作,MT5 沒斷線
+```
+
+### 監控(觀察換 RAM 是否穩定)
+- `free -m`:32 GB total,17 GB used(buffers/cache 健康)
+- `Swap`:51 MB / 30 GB(沒記憶體壓力 = 沒漏)
+- `dmesg`:無 ECC / MCE / corruption(乾淨)
+- `load average`:boot 後峰值 18.74 → 30 分鐘內降到 9.5(Docker pip install 在 container-station 啟動時造成,非 RAM)
+- 結論:換的新 RAM 條目前 24 小時內看起來健康
+
+### 對話節奏教訓
+- **「完成了」這 3 字模糊** — 第一次遷移精靈使用者回「完成了」,我假設意思是「遷移完成」,SSH 驗證才發現是「視窗關掉了」。下次 UI 操作後 **不能光信使用者口頭確認,要 SSH 驗證 state**
+- **buzzer 慘叫 ≠ 出事** — RAID rebuild 期間 QNAP 會響蜂鳴器(degraded 警示音),使用者驚一下,SSH 看 md2 顯示 rebuild 中是正常的
+- **背景監控 + 通知** — 用 `until` loop 監控 sync %,完成自動通知,使用者不用一直問「好了嗎」
+
+### 還沒做(待下場 / 別場 session)
+- [ ] **skywin**:設 SkywinVM「Host 開機時自動啟動」(VirtStation 設定),免得 NAS 重開要手動 virsh start
+- [ ] **skywin**:Windows 內自動下單 / MT5 設成 startup folder 或 Task Scheduler "At system startup",免得 VM 開機要手動拉
+- [ ] **lohastime**:`/etc/config/autorun.sh` 補建(獨立 session 處理,已記 memory)
+- [ ] **QTS Power Recovery 設定**:改成 `LAST_STATE`(現在還是 `POWER_ON`,下次計畫關機會被叫醒)
+- [ ] **觀察 RAM 1 週**:dmesg 錯誤數每天看,若 +5 以上 → 新 RAM 也有問題,考慮整批換
+
+### 不做(明確 out-of-scope)
+- ❌ Pool 1 DataVol1 Static → Thick(全停機 4–8 小時,不值得)
+- ❌ 把 SkywinVM 搬出 Pool 2(VM 配 NVMe RAID 1 已是最佳組合)
+
+---
+
+## 2026-06-09 — NAS 時間倒帶機(snapshot + HBS 3 mirror,Step 1 + Step 2 完成)
+
+### 主軸
+2026-06-07 晚場建好 Pool 3 後留的兩個 TODO(snapshot 排程 + Vault)。原本以為 plan 很單純,實際上踩了兩個雷,最後架構完全改寫。**完成日:2026-06-09。**
+
+### 原 plan(work-log 2026-06-07 寫的) vs 實際做出來的
+| 階段 | 原 plan | 實際做出來 |
+|----|----|----|
+| Snapshot Schedule | Pool 1 DataVol1 每天 02:00 snapshot | **改 Pool 3 BackupVol** snapshot(原因見「踩到的雷 1」)|
+| Vault / 異 pool 保護 | 「Snapshot Vault」 Pool 1 → Pool 3 | **HBS 3 file-level rsync** Pool 1 → Pool 3(原因見「踩到的雷 2」)|
+
+### 踩到的雷 1:DataVol1 是 Static volume(不支援 snapshot)
+- SSH `/sbin/qcli_storage -p` 跑出來顯示 `VolType: Static`,當下傻眼
+- Static volume 為了效能跳過 thin-provisioning layer,**代價是不能 snapshot**
+- 要在 Pool 1 開 snapshot:Static → Thick 不能 in-place 轉換,得備份+刪+重建+還原 = **全停機 4–8 小時**
+- 不值得 → **架構改成 Pool 3 為時間倒帶機**(snapshot 跑在 BackupVol,Pool 3 本來就是 Thick)
+- 教訓:**2026-06-07 寫 work-log 的「Pool 1 02:00 snapshot」結論沒驗證 volume type**,Claude(我)那場規劃時想當然耳,該被吐槽
+
+### 踩到的雷 2:QNAP SnapReplica 只能跨 NAS(不能本機 pool-to-pool)
+- 2026-06-07 那場 work-log 註記「Vault 是獨立 task」時用詞含糊,沒搞清楚 SnapReplica/Vault 的真實設計
+- 探查 `/sbin/qcli_snapreplica -h`:所有 flag 都 remote-targeted(`-c checkremotesite`、`-p remotepoollist`、`-C changepassword`),完全沒 local pool 選項
+- 結論:**SnapReplica 是給跨 NAS 的(主→備異地)**,我們一台 NAS 兩個 pool 用不了
+- 替代:**HBS 3(Hybrid Backup Sync)file-level rsync** — QNAP 原生 + 已預裝 + 為本機 pool-to-pool 設計
+
+### 踩到的雷 3:Pool 3 沒有 shared folder,HBS 3 看不到
+- 2026-06-07 建 BackupVol 時刻意「不勾建 shared folder」(以為純備份不用 share)
+- HBS 3 的資料夾選擇器**只能看到 shared folders**(SSH 確認所有 share 全在 CACHEDEV1_DATA = Pool 1)
+- 解法:QTS 控制台 → 共用資料夾 → 建立 `backups` share 指向 BackupVol(QTS 發現目錄已存在,選「使用既有」避免清掉舊備份)
+- 教訓:**「不勾建 share」省了當下兩秒,後來補建多 5 分鐘**,沒省到任何東西。**新建 pool/volume 都建一個 share**(可不開外部存取,但要存在)
+
+### 最終架構(每日節奏)
+```
+02:30  HBS 3 「Pool1_Web_to_Pool3_mirror」自動跑
+       /share/CACHEDEV1_DATA/Web/  →  /share/CACHEDEV3_DATA/backups/web_mirror/
+       (one-way sync,首次 268 MB / 10,028 檔,後續 delta-only)
+
+03:00  Pool 3 BackupVol 自動 snapshot
+       GFS 保留:1 小時 / 30 日 / 8 週 / 12 月(總 ~51 份,覆蓋 1 年)
+       抓到剛同步進來的最新 web_mirror
+```
+
+### 具體設定值
+
+**Step 1 — Pool 3 BackupVol Snapshot Schedule(QTS 儲存與快照總管)**
+- 排程類型:智慧型(GFS)
+- 保留:小時 1 / 日 30 / 週 8 / 月 12
+- 時間:03:00
+- 智慧型快照 = QTS 5.2.9 中文 UI 把 GFS 翻成「智慧型」,跟「只在資料變更時拍」是不同東西(我第一輪用詞用錯了,被使用者反問才釐清)
+
+**Step 2 — HBS 3 同步任務「Pool1_Web_to_Pool3_mirror」**
+- 類型:單向同步工作
+- 來源:本機 NAS / Web (Pool 1)
+- 目的:本機 NAS / backups/web_mirror (Pool 3,新建)
+- 排程:定時 / 每天 / 02:30
+- 篩選:無(整包鏡像,連 .htaccess / .renthouse_db.cnf 隱藏檔都包進去)
+
+### 驗證結果(首次手動跑)
+- 來源 Web/:10,028 檔 / 268 MB
+- 目的 web_mirror/:10,028 檔 / 251 MB(17 MB 差是 du block-size 算法差,內容一致)
+- `diff` 比對:0 差異
+- 隱藏目錄(`.@upload_cache` / `.streams` / `renthouse_backups.preBkupMig_*`)全同步
+- SSH 已確認 Pool 3 BackupVol 有 2 份 snapshot(2026-06-08 03:00 + 2026-06-09 03:00),證明 Step 1 排程實際在跑
+
+### 對話節奏教訓
+- **UI 操作一步一停,SSH 操作批次驗證** — 跟 2026-06-07 晚場同樣紀律,UI 中途使用者用「同步」「儲存空間」「立即同步」這種片段詞時,我猜半天容易猜錯,要請使用者照抄畫面字串
+- **資訊密度 vs 等回應** — 使用者打字慢,我給 100 字 plan 比給 500 字長篇好。每個 step 縮到 ≤ 4 行
+- **錯了就承認** — 「智慧型快照」用詞錯被反問,直接認錯改口,別硬拗
+
+### 還沒做(待下場)
+- [ ] 明早(2026-06-10)驗證 02:30 自動同步 + 03:00 snapshot 抓到 web_mirror(觀察用,不需做事)
+- [ ] 一週後(2026-06-14 後)清 `.preBkupMig_*` 5 個舊備份目錄
+- [ ] 月度長期歸檔 cron(每月 1 號打包關鍵資料 → Pool 3 archive 子目錄)— 優先級低
+- [ ] 主碟 DataVol1 expand(等用到 70% 再做)— 也順便評估要不要重建 Thick 開啟 Pool 1 snapshot
+
+### 不做的事(明確 out-of-scope)
+- ❌ DataVol1 重建 Thick 開 Pool 1 snapshot(全停機代價太大,Pool 3 mirror 已足夠保護)
+- ❌ SnapReplica 跨 NAS(只有一台 NAS,無意義)
+- ❌ 雲端備份(成本 + 隱私,先不考慮)
+
+---
+
+## 2026-06-07 晚場 — NAS 統一備份 pool(infra,跨全專案)
+
+### 主軸
+裝兩顆 WD Red Plus 4T 新碟 → 建獨立 RAID 1 pool(Storage Pool 3)→ 把全 NAS 5 個專案的備份目錄統一遷過去 → 各專案 manifest.yml + code 完全不用改(走 symlink)。
+
+### NAS 狀況盤點(這場一開始 SSH 跑出來的)
+- QTS 5.2.9(build 20260327,x86 Jasper Lake)
+- 既有:nvme0n1(Micron 238G,Pool 2 VM_SSD)+ sdc/sdd(WD40EFZX 4T × 2,Pool 1 RAID 1,DataVol1 1.8T volume,用 55%)
+- 既有 Pool 1 有 ~1.8T 沒拿出來給 volume(QNAP 預設 reserve),哪天主碟不夠用 expand volume 即可
+- 新增:sda/sdb(WD40EFZZ 4T × 2,Slot 5/6 = QTS UI 上的 HDD 3/4)
+- 共用 3 個 manifest 專案:renthouse(我)、ai_trading_system、lohastime(後者沒在 NAS 上有 manifest 檔)
+- 還有 daywin(ai_trading 的 slave,沒 manifest)、SkywinVM(VirtStation VM)
+
+### 遷移流程(實際做的)
+1. SSH 驗證:`/proc/mdstat`、`qcli_storage -d/p/v`、`df -h`、`hdparm -I /dev/sda` 等
+   - smartctl QNAP 預設沒裝;hdparm 至少能確認型號、容量、序號
+   - 新碟兩顆都是 WD40EFZZ-68CPAN0,WD Red Plus 4T CMR(跟舊碟 WD40EFZX 同系列不同批次,混用 RAID 沒問題)
+2. QTS UI 建 Storage Pool 3
+   - Disks: HDD 3 + HDD 4(**絕對不要勾 HDD 1/2** = 主碟)
+   - RAID Type: RAID 1
+   - Pool Guaranteed Snapshot Space: 20%(預設值)
+   - Alert Threshold: 80%
+3. 在 Pool 3 上建 BackupVol
+   - Type: **完整 Thick**(支援 snapshot,效能穩);不選 Static(不支援 snapshot,20% 預留浪費),不選 Thin(備份用沒必要 overcommit)
+   - 容量: Set to Max,~2.9 TB(扣掉 20% snapshot 預留後)
+   - 不勾 encryption、不勾 SSD cache、不勾建 shared folder
+4. SSH 驗證 `/share/CACHEDEV3_DATA` mount + 寫入測試 OK
+   - `cat /proc/mdstat` 看到 md3 raid1 sda3+sdb3,3.9TB raw,**lazy initial sync 中(ETA ~28 hr,不影響使用)**
+5. Phase 1 — 5 個目錄的 4 小檔同步搬遷(寫成 bash function `migrate()` 帶 src/dst/name 三參)
+   - `rsync -aH` → `find -type f | wc -l` 比對檔案數 → `mv` 加 `.preBkupMig_<TS>` 後綴 → `ln -s` 建 symlink
+   - ai_trading(75M)、skywin(74M)、daywin(568K)、renthouse(20M)總共 < 200M,瞬殺
+6. 順手清 `/share/.../Web/renthouse/renthouse_backups/`(V2.1 時代 api.php 寫的 2 個 JSON,共 20K)
+   - 不刪,搬到 `/share/CACHEDEV3_DATA/backups/renthouse/legacy_v21_json/` 歸檔
+   - 移除 live site 子目錄
+7. Phase 2 — SkywinVM_backups(**35G qcow2**)背景跑
+   - `rsync -aH --inplace`(大檔不用 delta)
+   - 19:22:51 → 19:35:14 = **12 分 23 秒**,期間 md3 還在 resync,IO 競爭沒事
+   - 完成後 bytes 完全對齊(37,084,139,520 = 37,084,139,520)
+8. 端到端驗證
+   - `readlink -f` 5 個舊路徑 → 全部解到新 pool ✅
+   - 觸發 renthouse manifest 的 mysqldump 指令(寫舊路徑)→ 實際落在 CACHEDEV3 ✅
+   - 各 pool 用量:CACHEDEV1 1006G(沒變),CACHEDEV3 34.8G(全新搬入)
+
+### 抓到的設計教訓 / 對話被使用者吐槽的點(這場)
+1. **「紀律」第一輪自我設限太多 — 被使用者吐槽**
+   - 我第一次提案說「ai_trading / skywin 是別 Claude 的事,我不寫遷移指令」→ 使用者:「ai_trading_system skywin 怎可不顧」→ 我承認:這條規矩對「manifest 不停別人服務」對,但對「使用者要幫整台 NAS 搬備份」就變成把工作丟回去
+   - 修正分寸:**改邊界 — 不改別人 manifest/code/service,但可以做純檔案層 rsync + symlink**(基礎建設是跨界合理工作)
+2. **「Pool Guaranteed Snapshot Space」第一輪推銷太大牙膏 — 被戳破**
+   - 我先說設 20% 可以「90 天時間倒帶」→ 使用者:「改 20% 有意義?」→ 我承認:20% 只是預留空間,不會自動開 snapshot。要拿到「時間倒帶」價值需要:**預留 + Snapshot Schedule + Snapshot Vault** 三件事,缺一不可
+   - 但 20% 已是 QTS 5.2.9 預設值,使用者直接接受(免改設定),未來補上 Schedule + Vault 時就有 ~745G 隔離空間可用
+3. **權限模型澄清 — 被使用者直接問**
+   - 「為什麼你有權限在 renthouse lohastime 其它卻沒有」→ 真相:**所有 Claude session 共用同一把 SSH key(admin@nas),零隔離**。「紀律」只是 briefing 寫的編輯規矩,不是系統強制
+   - 真要硬隔離:NAS 上開 user 如 `admin_renthouse` / `admin_skywin` 各給不同 key + 改各 manifest 的 access 區 — 是獨立 task,使用者明確說「不用 一起就可」當場決定不做
+4. **QTS UI 編號 vs SSH 編號要對齊**
+   - QTS Web UI 顯示「HDD 1/2/3/4」(從 1 起的對使用者編號)
+   - SSH 看到 `qcli_storage -d` 是「Port 1/3/4/5/6」(物理 backplane port)
+   - 我第一輪用 Port 編號叫使用者「勾 Disk 5/6」→ 被指正「HDD 1/2 是原本兩顆,3/4 是新的」→ 對應表必須給清楚
+5. **WD Red Plus 4T 兩批次混用 OK**:WD40EFZX(新批次)vs WD40EFZZ(舊批次),都是 CMR(關鍵 — SMR 不能做 RAID),同系列 RAID 1 沒問題
+6. **新 RAID 1 會跑 lazy initial sync**:QNAP 自動,28 小時 ETA,**不影響使用**(寫入會同時落兩顆,resync 只是背景 verify)
+7. **rsync --inplace 對大檔(qcow2)有用**:35G VM image 用 inplace 寫法,避免 rsync 預設的「寫 .tmp 再 mv」造成峰值容量 2 倍
+
+### 容量帳實在算 — 4T 是不是買多了
+- 全 NAS 備份**現在** ~35 GB(主要是 SkywinVM 35G,其他加起來 < 200M)
+- 一年後估累積 ~100 GB
+- RAID 1 可用 4T → **利用率 2.5%**(40 倍 over-provision)
+- 老實說:純備份角度 2T 鏡像就夠;但 4T 同系列 $/GB 比 2T 便宜,NAS 級 5+ 年壽命,不算白花
+- 要讓那 4T 真的有意義 → 接下來要設 **snapshot vault + 月度歸檔**
+
+### 還沒做(待下場)
+- [ ] Snapshot Schedule:Pool 1 的 DataVol1 每天 02:00 snapshot,保留 90 天
+- [ ] Snapshot Vault:把 Pool 1 的 snapshot 異地複製到 Pool 3(做時間倒帶機)
+- [ ] 月度長期歸檔 cron(每月 1 號打包關鍵資料 → Pool 3 archive 子目錄)
+- [ ] 一週後(2026-06-14 後)清 `.preBkupMig_*` 5 個舊備份目錄
+- [ ] 主碟 DataVol1 expand 把 reserve 的 1.8T 拿出來(等用到 70% 再做)
+
+### 不做的事(明確 out-of-scope)
+- ❌ 各專案 manifest.yml 一律不動(走 symlink,完全透明)
+- ❌ ai_trading 容器內部、SkywinVM、daywin 應用層一律不動
+- ❌ NAS user/permission 隔離(共用 admin key,使用者接受)
+
+### 對話節奏(這場使用者要求一步一步走)
+從「QTS Web UI 教我」開始,使用者明確要求 step-by-step + 等確認再下一步,直到 BackupVol 就緒才一次性跑全部 SSH 遷移。教訓:**infra 操作對使用者來說 UI 點擊風險最高,要慢、要等、要等回應**。SSH 那邊我可以批次跑(因為命令式、可驗證),UI 操作必須一步一停。
+
+---
+
 ## V3.2 — 2026-06-07 下午後續(picker / 套入 / cell 鎖定 / 對帳 / 速度)
 
 ### 主軸:把記帳變成可信賴的「期別會計系統」
