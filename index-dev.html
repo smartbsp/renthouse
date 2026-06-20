@@ -2032,6 +2032,21 @@ async function initApp() {
 }
 initApp();
 
+// 離開頁面前若有未儲存的記帳輸入 → 警告
+window.addEventListener('beforeunload', function(e) {
+  try {
+    var rA = parseFloat(localStorage.getItem('renthouseReceivedThisA') || '0') || 0;
+    var aA = parseFloat(localStorage.getItem('renthouseAdjustA') || '0') || 0;
+    var rB = parseFloat(localStorage.getItem('renthouseReceivedThisB') || '0') || 0;
+    var aB = parseFloat(localStorage.getItem('renthouseAdjustB') || '0') || 0;
+    if (rA !== 0 || aA !== 0 || rB !== 0 || aB !== 0) {
+      e.preventDefault();
+      e.returnValue = '記帳區還有未儲存的實收/調整輸入,確定離開?';
+      return e.returnValue;
+    }
+  } catch(_) {}
+});
+
 let saveTimer;
 document.querySelectorAll('input').forEach(el => {
   el.addEventListener('input', () => {
@@ -3756,12 +3771,7 @@ function _unitAccount(unit) {
           + '</div>'
         + '</div>';
       })()
-    + (locked
-        ? '<button class="small" onclick="unlockEdit(\'' + unit + '\')" style="width:100%;margin-top:8px;background:#fbbf24;color:#fff;font-size:14px;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">✎ 編輯</button>'
-        : '<div style="display:grid;grid-template-columns:2fr 1fr;gap:6px;margin-top:8px;">'
-            + '<button class="small" onmousedown="event.preventDefault()" onclick="rolloverPeriod(\'' + unit + '\')" style="background:' + ident + ';color:#fff;font-size:14px;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">✚ 新增結算</button>'
-            + '<button class="small" onclick="startNewPeriod(\'' + unit + '\')" style="background:#94a3b8;color:#fff;font-size:13px;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;" title="清空輸入,picker 重抓未繳清(不寫 DB)">↶ 取消重設</button>'
-          + '</div>')
+    + (locked ? '<button class="small" onclick="unlockEdit(\'' + unit + '\')" style="width:100%;margin-top:8px;background:#fbbf24;color:#fff;font-size:14px;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">✎ 編輯</button>' : '')
   + '</div>';
 }
 
@@ -3820,6 +3830,39 @@ function _liveUpdateBalanceRow(unit) {
     var balText = balAfter > 0.5 ? '+' + balAfter : balAfter < -0.5 ? String(balAfter) : '0';
     balAfterEl.textContent = balText;
     balAfterEl.style.color = balColor;
+  }
+
+  // 同步 BALANCE 對帳 表的「結算後預繳」行(unit-specific cell)
+  var balTblCell = document.getElementById('balTableAfter' + unit);
+  if (balTblCell) {
+    var c = balAfter > 0.5 ? '#16a34a' : balAfter < -0.5 ? '#dc2626' : '#475569';
+    var t = balAfter > 0.5 ? '+' + balAfter : balAfter < -0.5 ? String(balAfter) : '0';
+    balTblCell.textContent = t;
+    balTblCell.style.color = c;
+  }
+  // 合計欄即時更新(A + B)
+  var balTblTotalEl = document.getElementById('balTableAfterTotal');
+  if (balTblTotalEl) {
+    var otherUnit = unit === 'A' ? 'B' : 'A';
+    var otherBalBefore = Math.round(_computeBalance(otherUnit, localStorage.getItem('renthouseAccountDate' + otherUnit) || ''));
+    var otherPaid = parseFloat(localStorage.getItem('renthouseReceivedThis' + otherUnit) || '0') || 0;
+    var otherAdj = parseFloat(localStorage.getItem('renthouseAdjust' + otherUnit) || '0') || 0;
+    // sumDue for other unit
+    var otherSumDue = 0;
+    (picker || []).forEach(function(p) {
+      var arr = p.table === 'electric' ? elec : water;
+      var r = arr.find(function(x) { return String(x.id) === String(p.id); });
+      if (!r) return;
+      var due = otherUnit === 'A' ? (parseFloat(r.costA) || 0) : (parseFloat(r.costB) || 0);
+      var pCell = parseFloat(otherUnit === 'A' ? r.paidA : r.paidB) || 0;
+      otherSumDue += Math.max(0, due - pCell);
+    });
+    var otherBalAfter = Math.round(otherBalBefore + otherPaid - otherSumDue - otherAdj);
+    var totalAfter = balAfter + otherBalAfter;
+    var tc = totalAfter > 0.5 ? '#16a34a' : totalAfter < -0.5 ? '#dc2626' : '#475569';
+    var tt = totalAfter > 0.5 ? '+' + totalAfter : totalAfter < -0.5 ? String(totalAfter) : '0';
+    balTblTotalEl.textContent = tt;
+    balTblTotalEl.style.color = tc;
   }
 
   // 借貸平衡 panel(即時)
@@ -6078,14 +6121,47 @@ function _renderBalanceCheck() {
         + '<div style="text-align:right;color:#16a34a;">' + paidB.toFixed(0) + '</div>'
         + '<div style="text-align:right;color:#16a34a;font-weight:700;">' + (paidA + paidB).toFixed(0) + '</div>'
       + '</div>'
-      + '<div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;padding:8px;background:#f8fafc;font-weight:700;">'
+      + '<div id="balanceTableAfter" style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;padding:8px;background:#f8fafc;font-weight:700;">'
         + '<div>= 💰 結算後預繳</div>'
-        + '<div style="text-align:right;color:' + diffColor(balAfterA) + ';">' + signFmt(balAfterA) + '</div>'
-        + '<div style="text-align:right;color:' + diffColor(balAfterB) + ';">' + signFmt(balAfterB) + '</div>'
-        + '<div style="text-align:right;font-size:14px;color:' + diffColor(balAfterA + balAfterB) + ';">' + signFmt(balAfterA + balAfterB) + '</div>'
+        + '<div id="balTableAfterA" style="text-align:right;color:' + diffColor(balAfterA) + ';">' + signFmt(balAfterA) + '</div>'
+        + '<div id="balTableAfterB" style="text-align:right;color:' + diffColor(balAfterB) + ';">' + signFmt(balAfterB) + '</div>'
+        + '<div id="balTableAfterTotal" style="text-align:right;font-size:14px;color:' + diffColor(balAfterA + balAfterB) + ';">' + signFmt(balAfterA + balAfterB) + '</div>'
       + '</div>'
     + '</div>'
+    // ★ V3.7 統一儲存按鈕(A + B 一起)+ 取消重設
+    + '<div style="display:grid;grid-template-columns:3fr 1fr;gap:8px;margin-top:14px;">'
+      + '<button onmousedown="event.preventDefault()" onclick="saveBothUnits()" style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:16px;padding:14px;border:none;border-radius:8px;cursor:pointer;font-weight:800;box-shadow:0 4px 8px rgba(22,163,74,0.3);">💾 儲存結算(A + B)</button>'
+      + '<button onclick="resetBothUnits()" style="background:#94a3b8;color:#fff;font-size:14px;padding:14px;border:none;border-radius:8px;cursor:pointer;font-weight:700;" title="清空 A + B 輸入,picker 重抓未繳清(不寫 DB)">↶ 取消重設</button>'
+    + '</div>'
   + '</div>';
+}
+
+// V3.7 統一儲存:A + B 同時 settle
+function saveBothUnits() {
+  // flush input focus
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur();
+  var rA = parseFloat(localStorage.getItem('renthouseReceivedThisA') || '0') || 0;
+  var aA = parseFloat(localStorage.getItem('renthouseAdjustA') || '0') || 0;
+  var rB = parseFloat(localStorage.getItem('renthouseReceivedThisB') || '0') || 0;
+  var aB = parseFloat(localStorage.getItem('renthouseAdjustB') || '0') || 0;
+  var picker = [];
+  try { picker = JSON.parse(localStorage.getItem('renthouseBalanceCheckedIds') || '[]'); } catch(e) {}
+  // 計算每戶有沒有 settle 必要
+  var hasA = rA !== 0 || aA !== 0 || picker.length > 0;
+  var hasB = rB !== 0 || aB !== 0 || picker.length > 0;
+  if (!hasA && !hasB) {
+    showToast('⚠️ A 跟 B 都沒輸入也沒選 picker,無事可存');
+    return;
+  }
+  if (hasA) rolloverPeriod('A');
+  if (hasB) rolloverPeriod('B');
+  showToast('💾 已儲存結算 (A: ' + (hasA ? '✓' : '−') + ' B: ' + (hasB ? '✓' : '−') + ')');
+}
+
+// V3.7 統一取消重設:A + B 一起
+function resetBothUnits() {
+  startNewPeriod('A');
+  startNewPeriod('B');
 }
 
 function renderSummaryList() {
