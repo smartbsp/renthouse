@@ -3335,6 +3335,27 @@ function _makeSummaryRow(it) {
     + '</div>';
 }
 
+// 預設「未繳清」picker:已過帳(paid=1)且任一戶未付清(paidA<dueA 或 paidB<dueB,partial 也算)
+function _defaultUnpaidCheckedIds() {
+  var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  var water = waterRecords || [];
+  var ids = [];
+  function scan(arr, table) {
+    arr.filter(function(r) { return parseInt(r.paid, 10) === 1; }).forEach(function(r) {
+      var dueA = _itemDueA({ table: table, r: r });
+      var dueB = _itemDueB({ table: table, r: r });
+      var pA = parseFloat(r.paidA) || 0;
+      var pB = parseFloat(r.paidB) || 0;
+      if ((dueA > 0 && pA < dueA - 0.5) || (dueB > 0 && pB < dueB - 0.5)) {
+        ids.push({ table: table, id: String(r.id) });
+      }
+    });
+  }
+  scan(elec, 'electric');
+  scan(water, 'water');
+  return ids;
+}
+
 function _unitAccount(unit) {
   var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   var water = waterRecords || [];
@@ -3347,14 +3368,8 @@ function _unitAccount(unit) {
     try { checkedIds = JSON.parse(rawIds); } catch(e) {}
   }
   if (!Array.isArray(checkedIds)) {
-    // 從未設定 → 預設最新一期(電 + 水)
-    checkedIds = [];
-    var le = elec.filter(function(r) { return parseInt(r.paid, 10) === 1; })
-      .sort(function(a, b) { return (b.billMonth || '').localeCompare(a.billMonth || ''); })[0];
-    var lw = water.filter(function(r) { return parseInt(r.paid, 10) === 1; })
-      .sort(function(a, b) { return (b.billMonth || '').localeCompare(a.billMonth || ''); })[0];
-    if (le) checkedIds.push({ table: 'electric', id: String(le.id) });
-    if (lw) checkedIds.push({ table: 'water', id: String(lw.id) });
+    // 從未設定 → 預設「所有未繳清」(partial 也算)
+    checkedIds = _defaultUnpaidCheckedIds();
   }
 
   var entries = [];
@@ -3366,19 +3381,21 @@ function _unitAccount(unit) {
     var due = unit === 'A' ? _itemDueA(it) : _itemDueB(it);
     if (due > 0) {
       var unitPaid = parseFloat(unit === 'A' ? r.paidA : r.paidB) || 0;
+      var collect = Math.max(0, due - unitPaid);
       entries.push({
         type: c.table === 'electric' ? '⚡電費' : '💧水費',
         billMonth: r.billMonth || '--',
         due: due,
+        paid: unitPaid,
+        collect: collect,
         done: unitPaid >= due - 0.5
       });
     }
   });
   entries.sort(function(a, b) { return (a.billMonth || '').localeCompare(b.billMonth || ''); });
 
-  // 應繳明細 = picker 期內單據 − 該戶已勾「已結」的(cell toggle 已結會從這裡消失)
-  var unpaidEntries = entries.filter(function(x) { return !x.done; });
-  var sumDue  = unpaidEntries.reduce(function(s, x) { return s + x.due; }, 0);
+  // 應繳款 = 實際要收(已繳的 collect=0,partial 是剩餘);劃線顯示僅視覺
+  var sumDue  = entries.reduce(function(s, x) { return s + x.collect; }, 0);
 
   // 上期溢(缺)繳:從繳費歷史最新一期帶入(accountDate < 本期記帳日期)
   function _getLatestPrevDeficit(u, beforeDate) {
@@ -3421,13 +3438,20 @@ function _unitAccount(unit) {
   var ident = UNIT_COLOR[unit];
   var bg = unit === 'A' ? '#eff6ff' : '#f0fdf4';
 
-  var detailRows = unpaidEntries.map(function(x) {
+  var detailRows = entries.map(function(x) {
     var kc = x.type.indexOf('⚡') >= 0 ? KIND_COLOR.electric : KIND_COLOR.water;
-    return '<div style="display:flex;justify-content:space-between;padding:4px 5px;border-bottom:1px dashed #e2e8f0;font-size:13px;color:#374151;">'
-      + '<span><span style="color:' + kc + ';font-weight:700;">' + x.type + '</span> ' + x.billMonth + '</span>'
-      + '<span style="font-weight:600;color:#dc2626;">' + x.due.toFixed(0) + '</span>'
+    var partial = x.paid > 0.5 && !x.done;
+    var lineDeco = x.done ? 'text-decoration:line-through;color:#94a3b8;' : 'color:#374151;';
+    var amtColor = x.done ? '#94a3b8' : '#dc2626';
+    var tag = x.done
+      ? ' <span style="color:#16a34a;font-size:11px;font-weight:700;">(已收 ' + x.due.toFixed(0) + ')</span>'
+      : (partial ? ' <span style="color:#f59e0b;font-size:11px;font-weight:700;">(已收 ' + x.paid.toFixed(0) + ')</span>' : '');
+    var amtShown = x.done ? x.due : x.collect;
+    return '<div style="display:flex;justify-content:space-between;padding:4px 5px;border-bottom:1px dashed #e2e8f0;font-size:13px;' + lineDeco + '">'
+      + '<span><span style="color:' + kc + ';font-weight:700;' + (x.done ? 'opacity:0.6;' : '') + '">' + x.type + '</span> ' + x.billMonth + tag + '</span>'
+      + '<span style="font-weight:600;color:' + amtColor + ';">' + amtShown.toFixed(0) + '</span>'
     + '</div>';
-  }).join('') || '<div style="padding:8px;color:#16a34a;font-size:13px;text-align:center;">🎉 無未繳</div>';
+  }).join('') || '<div style="padding:8px;color:#16a34a;font-size:13px;text-align:center;">🎉 本期無未繳</div>';
 
   // 統一:正 = 溢繳(多繳/綠);負 = 缺繳(少繳/紅);0 = 不顯示
   var prevLabel = '', prevColor = '#475569';
@@ -3551,14 +3575,9 @@ function _snapshotPaidItems(unit) {
   var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   var water = waterRecords || [];
 
-  // 若 picker 沒選任何 → 預設最新一期(避免 snapshot 空白)
+  // 若 picker 沒選任何 → 預設「所有未繳清」(避免 snapshot 空白)
   if (checkedIds.length === 0) {
-    var le = elec.filter(function(r) { return parseInt(r.paid, 10) === 1; })
-      .sort(function(a, b) { return (b.billMonth || '').localeCompare(a.billMonth || ''); })[0];
-    var lw = water.filter(function(r) { return parseInt(r.paid, 10) === 1; })
-      .sort(function(a, b) { return (b.billMonth || '').localeCompare(a.billMonth || ''); })[0];
-    if (le) checkedIds.push({ table: 'electric', id: String(le.id) });
-    if (lw) checkedIds.push({ table: 'water', id: String(lw.id) });
+    checkedIds = _defaultUnpaidCheckedIds();
   }
 
   var items = [];
@@ -3569,13 +3588,13 @@ function _snapshotPaidItems(unit) {
     var it = { table: c.table, r: r };
     var due = unit === 'A' ? _itemDueA(it) : _itemDueB(it);
     if (due <= 0) return;
-    // 該戶已勾 cell 已結 → 不入該期快照(本期應繳明細不包含已結)
+    // 脫鉤 cell 已結:picker 全進 snapshot,該期單據完整
     var unitPaid = parseFloat(unit === 'A' ? r.paidA : r.paidB) || 0;
-    if (unitPaid >= due - 0.5) return;
     items.push({
       type: c.table === 'electric' ? '⚡電費' : '💧水費',
       billMonth: r.billMonth || '--',
-      due: due
+      due: due,
+      done: unitPaid >= due - 0.5
     });
   });
   return items;
@@ -3667,8 +3686,79 @@ function rolloverPeriod(unit, net) {
     msg = '✅ 戶 ' + unit + ' ' + accountDate + ' 已新增 (' + label + ')';
   }
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
-  localStorage.setItem('renthouseLocked' + unit, '1');
-  showToast(msg + ' + 鎖定');
+
+  // 自動分配實收到 picker:大筆優先付清,剩餘額度落到小筆變 partial(未繳清)
+  // 例:實收 2000,picker 電 1953 + 水 292 → 電 1953 全付 + 水 47 partial(還欠 245)
+  var autoCount = 0;
+  var partialCount = 0;
+  if (received > 0.5) {
+    var checkedIds = [];
+    try { checkedIds = JSON.parse(localStorage.getItem('renthouseBalanceCheckedIds') || '[]') || []; } catch(e) {}
+    console.log('[auto-distribute] netR=' + netR + ', received=' + received + ', unit=' + unit);
+    if (Array.isArray(checkedIds) && checkedIds.length > 0) {
+      var elecLs = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+      var waterArr = (Array.isArray(waterRecords) && waterRecords.length > 0)
+        ? waterRecords
+        : JSON.parse(localStorage.getItem('renthouseWaterRecords') || '[]');
+      if (!Array.isArray(waterRecords) || waterRecords.length === 0) waterRecords = waterArr;
+      // 蒐集該戶尚未付清的 items
+      var itemsToSettle = [];
+      checkedIds.forEach(function(c) {
+        var arr = c.table === 'electric' ? elecLs : waterArr;
+        var idx = arr.findIndex(function(x) { return String(x.id) === String(c.id); });
+        if (idx < 0) return;
+        var r = arr[idx];
+        var due = unit === 'A' ? _itemDueA({ table: c.table, r: r }) : _itemDueB({ table: c.table, r: r });
+        if (due <= 0) return;
+        var paidKey = unit === 'A' ? 'paidA' : 'paidB';
+        var currentPaid = parseFloat(r[paidKey]) || 0;
+        if (currentPaid >= due - 0.5) return;  // 已付清,跳過
+        itemsToSettle.push({ c: c, arr: arr, idx: idx, due: due, currentPaid: currentPaid, paidKey: paidKey, remaining: due - currentPaid });
+      });
+      // 排序:remaining DESC → 大筆先付清,credit 用完後小筆變 partial
+      itemsToSettle.sort(function(a, b) { return b.remaining - a.remaining; });
+      var credit = received;
+      var apiPromises = [];
+      itemsToSettle.forEach(function(item) {
+        if (credit <= 0.5) return;
+        var pay = Math.min(item.remaining, credit);
+        var newPaid = item.currentPaid + pay;
+        item.arr[item.idx][item.paidKey] = newPaid;
+        credit -= pay;
+        if (newPaid >= item.due - 0.5) autoCount++;
+        else partialCount++;
+        if (isNAS) {
+          apiPromises.push(
+            fetch(API + '?action=set_paid_amount', { method: 'POST', body: JSON.stringify({ table: item.c.table, id: item.c.id, unit: unit, amount: newPaid }) })
+          );
+        }
+      });
+      console.log('[auto-distribute] fully=' + autoCount + ', partial=' + partialCount + ', creditLeft=' + credit);
+      if (autoCount + partialCount > 0) {
+        localStorage.setItem('renthouseRecords', JSON.stringify(elecLs));
+        localStorage.setItem('renthouseWaterRecords', JSON.stringify(waterArr));
+        waterRecords = waterArr;
+        if (apiPromises.length > 0) {
+          Promise.all(apiPromises).catch(function() { showToast('⚠️ 自動分配本機 OK,NAS 同步部分失敗'); });
+        }
+      }
+    }
+  } else {
+    console.log('[auto-distribute] skipped: received=' + received + ' (沒實收)');
+  }
+
+  // 💾 = 結算 + 開新期(實收/調整/payDate 清空,picker 重抓未繳清,日期回今天)
+  var d = new Date();
+  var today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  localStorage.setItem('renthouseAccountDate' + unit, today);
+  localStorage.setItem('renthouseReceivedThis' + unit, '0');
+  localStorage.setItem('renthouseAdjust' + unit, '0');
+  localStorage.setItem('renthousePayDate' + unit, '');
+  localStorage.setItem('renthouseLocked' + unit, '0');
+  var autoIds = _defaultUnpaidCheckedIds();
+  localStorage.setItem('renthouseBalanceCheckedIds', JSON.stringify(autoIds));
+
+  showToast(msg + (autoCount > 0 ? ' · 自動結清 ' + autoCount + ' 筆' : '') + ' · 已開新期');
   renderSummary();
 }
 
@@ -3687,9 +3777,10 @@ function startNewPeriod(unit) {
   localStorage.setItem('renthouseAdjust' + unit, '0');
   localStorage.setItem('renthousePayDate' + unit, '');
   localStorage.setItem('renthouseLocked' + unit, '0');
-  // picker 清空(刻意設 [] 不 fallback latest;用戶自己從 BALANCE picker 勾新單據)
-  localStorage.setItem('renthouseBalanceCheckedIds', '[]');
-  showToast('🆕 戶 ' + unit + ' 已開新期,請從上方面板勾選本期單據');
+  // picker 自動勾「當下還未繳清」(partial 也算未繳清)
+  var autoIds = _defaultUnpaidCheckedIds();
+  localStorage.setItem('renthouseBalanceCheckedIds', JSON.stringify(autoIds));
+  showToast('🆕 戶 ' + unit + ' 已開新期,已自動勾 ' + autoIds.length + ' 筆未繳清單據');
   renderSummary();
 }
 
@@ -3738,14 +3829,9 @@ function printInvoice(unit) {
   var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   var water = waterRecords || [];
 
-  // 沒選 → 預設最新一期
+  // 沒選 → 預設「所有未繳清」
   if (checkedIds.length === 0) {
-    var le = elec.filter(function(r) { return parseInt(r.paid, 10) === 1; })
-      .sort(function(a, b) { return (b.billMonth || '').localeCompare(a.billMonth || ''); })[0];
-    var lw = water.filter(function(r) { return parseInt(r.paid, 10) === 1; })
-      .sort(function(a, b) { return (b.billMonth || '').localeCompare(a.billMonth || ''); })[0];
-    if (le) checkedIds.push({ table: 'electric', id: String(le.id) });
-    if (lw) checkedIds.push({ table: 'water', id: String(lw.id) });
+    checkedIds = _defaultUnpaidCheckedIds();
   }
 
   var entries = [];
@@ -3756,7 +3842,7 @@ function printInvoice(unit) {
     var it = { table: c.table, r: r };
     var due = unit === 'A' ? _itemDueA(it) : _itemDueB(it);
     if (due <= 0) return;
-    // 該戶已勾 cell 已結 → 不入列印 (跟主卡 / snapshot 一致)
+    // 列印 = 只列當下要付的(已收的不印,給房客乾淨的應繳通知)
     var unitPaid = parseFloat(unit === 'A' ? r.paidA : r.paidB) || 0;
     if (unitPaid >= due - 0.5) return;
     entries.push({
@@ -3900,91 +3986,34 @@ function viewPaymentHistory(unit) {
 
   var content;
   if (history.length === 0) {
-    content = '<div style="padding:24px;text-align:center;color:#94a3b8;">戶 ' + unit + ' 尚無結算紀錄<br><span style="font-size:10px;">按「結算本期 → 開新期」會自動存入</span></div>';
+    content = '<div style="padding:24px;text-align:center;color:#94a3b8;">戶 ' + unit + ' 尚無結算紀錄<br><span style="font-size:10px;">按「💾 結算」會自動存入</span></div>';
   } else {
     content = history.map(function(h, idx) {
       var periodLabel = h.accountDate || '(無記帳日期)';
-      var savedAt = h.updatedAt || h.settledAt;
-      var sd = new Date(savedAt);
-      var savedStr = (sd.getFullYear() - 1911) + '/' + (sd.getMonth() + 1) + '/' + sd.getDate() + ' ' + sd.getHours() + ':' + String(sd.getMinutes()).padStart(2, '0');
       var sa = h.settledAt;
-      var sortedPaidItems = (h.paidItems || []).slice().sort(function(a, b) {
-        return (a.billMonth || '').localeCompare(b.billMonth || '');
-      });
-      var items = sortedPaidItems.map(function(it) {
-        var kc = (it.type || '').indexOf('⚡') >= 0 ? KIND_COLOR.electric : KIND_COLOR.water;
-        return '<div style="font-size:13px;padding:3px 4px;display:flex;justify-content:space-between;border-bottom:1px dashed #e2e8f0;">'
-          + '<span><span style="color:' + kc + ';font-weight:700;">' + it.type + '</span> ' + it.billMonth + '</span>'
-          + '<span style="font-weight:600;color:#dc2626;">' + Math.round(it.due || 0) + '</span>'
-        + '</div>';
-      }).join('');
-
       var ci = Math.round(parseFloat(h.carryIn) || 0);
       var rcv = Math.round(parseFloat(h.received) || 0);
-      var adj = Math.round(parseFloat(h.adjust) || 0);
       var sumDueH = Math.round(parseFloat(h.totalPaidDue) || 0);
-      var dueThisH = sumDueH - ci + adj;  // 本期應繳金額
       var co = Math.round(parseFloat(h.carryOut) || 0);
-      var coColor = co > 0.5 ? '#16a34a' : co < -0.5 ? '#dc2626' : '#475569';
-      var coLabel = co > 0.5 ? '溢繳' : co < -0.5 ? '缺繳' : '結清';
-      var coDisplay = co > 0.5 ? '+' + co : co < -0.5 ? String(co) : '0';
+      var bills = (h.paidItems || []).length;
 
-      var prevOp, prevName, prevColor;
-      if (ci > 0.5)       { prevOp = '−'; prevName = '上期溢繳'; prevColor = '#16a34a'; }
-      else if (ci < -0.5) { prevOp = '+'; prevName = '上期缺繳'; prevColor = '#dc2626'; }
-      else                { prevOp = '−'; prevName = '上期溢(缺)繳'; prevColor = '#94a3b8'; }
-      var adjOp, adjColor;
-      if (adj > 0.5)       { adjOp = '+'; adjColor = '#b45309'; }
-      else if (adj < -0.5) { adjOp = '−'; adjColor = '#dc2626'; }
-      else                 { adjOp = '±'; adjColor = '#f59e0b'; }
+      var coColor, coLabel, coIcon;
+      if (co > 0.5)        { coColor = '#16a34a'; coLabel = '溢繳 ' + co;            coIcon = '✨'; }
+      else if (co < -0.5)  { coColor = '#dc2626'; coLabel = '缺繳 ' + Math.abs(co);  coIcon = '⚠️'; }
+      else                 { coColor = '#475569'; coLabel = '結清';                 coIcon = '✓'; }
 
       var delPending = _delConfirmTarget === sa;
       var bgIdent = unit === 'A' ? '#eff6ff' : '#f0fdf4';
 
-      return '<div data-date="' + (h.accountDate || '') + '" style="border:1.5px solid ' + ident + ';border-radius:12px;margin-bottom:12px;background:' + bgIdent + ';padding:10px;">'
-        // ── HEADER ──
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
-          + '<div>'
-            + '<div style="font-weight:700;color:' + ident + ';font-size:16px;">📅 ' + periodLabel + '</div>'
-            + '<div style="font-size:10px;color:#94a3b8;">更新 ' + savedStr + '</div>'
+      return '<div data-date="' + (h.accountDate || '') + '" style="border:1px solid ' + ident + ';border-radius:8px;margin-bottom:6px;background:' + bgIdent + ';padding:8px 10px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
+          + '<div style="flex:1;min-width:160px;">'
+            + '<div style="font-weight:700;color:' + ident + ';font-size:14px;">📅 ' + periodLabel + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(' + bills + ' 筆)</span></div>'
+            + '<div style="font-size:11px;color:#64748b;margin-top:2px;">應繳 <span style="color:#dc2626;font-weight:700;">' + sumDueH + '</span> · 實收 <span style="color:#16a34a;font-weight:700;">' + rcv + '</span> · <span style="color:' + coColor + ';font-weight:700;">' + coIcon + ' ' + coLabel + '</span></div>'
           + '</div>'
-          + '<div style="display:flex;gap:6px;">'
-            + '<button onclick="loadPeriodToCard(\'' + sa + '\',\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;font-size:12px;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:700;">✏️ 套入</button>'
-            + '<button onclick="deletePaymentHistory(\'' + sa + '\',\'' + unit + '\')" style="background:' + (delPending ? '#dc2626' : 'transparent') + ';border:1.5px solid #dc2626;color:' + (delPending ? '#fff' : '#dc2626') + ';font-size:12px;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:700;">🗑️ ' + (delPending ? '再按確認' : '刪') + '</button>'
-          + '</div>'
-        + '</div>'
-        // ── 日期 ──
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;margin-bottom:8px;background:#fff;border-radius:6px;font-size:12px;">'
-          + '<div style="display:flex;flex-direction:column;"><span style="color:#94a3b8;font-size:10px;">記帳日期</span><input type="date" value="' + (h.accountDate || '') + '" onchange="updatePaymentHistoryField(\'' + sa + '\',\'accountDate\', this.value, true)" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;font-weight:700;color:' + ident + ';"></div>'
-          + '<div style="display:flex;flex-direction:column;"><span style="color:#94a3b8;font-size:10px;">繳款日期</span><input type="date" value="' + (h.payDate || '') + '" onchange="updatePaymentHistoryField(\'' + sa + '\',\'payDate\', this.value, true)" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;font-weight:700;color:#16a34a;"></div>'
-        + '</div>'
-        // ── 房客面:應繳明細 → 本期應繳金額 ──
-        + '<div style="background:#fff;border:1.5px solid ' + ident + ';border-radius:8px;padding:8px;margin-bottom:8px;">'
-          + '<div style="font-size:12px;font-weight:700;color:' + ident + ';margin-bottom:6px;">📋 應繳明細</div>'
-          + (items ? '<div style="background:#f8fafc;border-radius:6px;padding:4px;margin-bottom:6px;">' + items + '</div>' : '<div style="padding:6px;color:#94a3b8;text-align:center;font-size:11px;">無明細</div>')
-          + '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;"><span>應繳款</span><span style="font-weight:700;color:#dc2626;">' + sumDueH + '</span></div>'
-          + '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;align-items:center;">'
-            + '<span><span style="color:' + prevColor + ';font-weight:700;font-size:15px;">' + prevOp + '</span> ' + prevName + '</span>'
-            + '<input type="number" step="1" value="' + ci + '" onchange="updatePaymentHistoryField(\'' + sa + '\',\'carryIn\', this.value)" style="width:75px;text-align:right;padding:3px 5px;border:1px solid ' + prevColor + ';border-radius:4px;font-size:12px;color:' + prevColor + ';font-weight:700;">'
-          + '</div>'
-          + '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;align-items:center;">'
-            + '<span><span style="color:' + adjColor + ';font-weight:700;font-size:15px;">' + adjOp + '</span> 調整</span>'
-            + '<input type="number" step="1" value="' + adj + '" onchange="updatePaymentHistoryField(\'' + sa + '\',\'adjust\', this.value)" style="width:75px;text-align:right;padding:3px 5px;border:1px solid #f59e0b;border-radius:4px;font-size:12px;color:#b45309;font-weight:700;">'
-          + '</div>'
-          + '<div style="display:flex;justify-content:space-between;padding:6px 4px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;">'
-            + '<span style="font-weight:700;font-size:14px;">本期應繳金額</span>'
-            + '<span style="color:' + ident + ';font-size:22px;font-weight:800;">' + dueThisH + '</span>'
-          + '</div>'
-        + '</div>'
-        // ── 房東面:實收 → 本期溢(缺)繳 ──
-        + '<div style="background:#f1f5f9;border:1px dashed #94a3b8;border-radius:8px;padding:8px;">'
-          + '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;align-items:center;">'
-            + '<span><span style="color:#16a34a;font-weight:700;font-size:15px;">−</span> 實收款項</span>'
-            + '<input type="number" step="1" value="' + rcv + '" onchange="updatePaymentHistoryField(\'' + sa + '\',\'received\', this.value)" style="width:90px;text-align:right;padding:3px 5px;border:1px solid #16a34a;border-radius:4px;font-size:12px;color:#16a34a;font-weight:700;">'
-          + '</div>'
-          + '<div style="display:flex;justify-content:space-between;padding:6px 4px 0;border-top:1px solid #cbd5e1;margin-top:4px;align-items:center;">'
-            + '<span style="font-weight:700;font-size:13px;">本期溢(缺)繳 <span style="color:' + coColor + ';font-size:11px;">(' + coLabel + ')</span></span>'
-            + '<input type="number" step="1" value="' + co + '" onchange="updatePaymentHistoryField(\'' + sa + '\',\'carryOut\', this.value)" style="width:90px;text-align:right;padding:3px 5px;border:1.5px solid ' + coColor + ';border-radius:6px;font-size:16px;color:' + coColor + ';font-weight:800;">'
+          + '<div style="display:flex;gap:4px;">'
+            + '<button onclick="loadPeriodToCard(\'' + sa + '\',\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;font-size:11px;padding:5px 9px;border-radius:5px;cursor:pointer;font-weight:700;">✏️ 套入</button>'
+            + '<button onclick="deletePaymentHistory(\'' + sa + '\',\'' + unit + '\')" style="background:' + (delPending ? '#dc2626' : 'transparent') + ';border:1px solid #dc2626;color:' + (delPending ? '#fff' : '#dc2626') + ';font-size:11px;padding:5px 9px;border-radius:5px;cursor:pointer;font-weight:700;">🗑️ ' + (delPending ? '確認' : '刪') + '</button>'
           + '</div>'
         + '</div>'
       + '</div>';
@@ -4294,25 +4323,30 @@ function _renderBalanceCheck() {
   waterPaid.forEach(function(r) { allBills.push({ table: 'water', icon: '💧', kind: '水費', kindColor: KIND_COLOR.water, r: r }); });
   allBills.sort(function(a, b) { return (b.r.billMonth || '').localeCompare(a.r.billMonth || ''); });
 
-  // 已選 IDs:預設最新一期(電 + 水 各一)
+  // 已選 IDs:預設「所有未繳清」(partial 也算)
   var checkedIds = null;
   try { checkedIds = JSON.parse(localStorage.getItem('renthouseBalanceCheckedIds') || 'null'); } catch(e) {}
   if (!Array.isArray(checkedIds)) {
-    checkedIds = [];
-    if (elecPaid[0]) checkedIds.push({ table: 'electric', id: String(elecPaid[0].id) });
-    if (waterPaid[0]) checkedIds.push({ table: 'water', id: String(waterPaid[0].id) });
+    checkedIds = _defaultUnpaidCheckedIds();
   }
   function isChecked(table, id) {
     return checkedIds.some(function(c) { return c.table === table && String(c.id) === String(id); });
   }
 
   // 已選筆計算
-  var billSum = 0, dueA = 0, dueB = 0, eTotal = 0, wTotal = 0;
+  // dueA/dueB = 應繳金額(net,扣 cell 已收);dueA_gross/dueB_gross 保留供拆分檢核
+  var billSum = 0, dueA = 0, dueB = 0, dueA_gross = 0, dueB_gross = 0, eTotal = 0, wTotal = 0;
   allBills.filter(function(b) { return isChecked(b.table, b.r.id); }).forEach(function(b) {
     var a = _itemDueA({ table: b.table, r: b.r });
     var bs = _itemDueB({ table: b.table, r: b.r });
+    var pA = parseFloat(b.r.paidA) || 0;
+    var pB = parseFloat(b.r.paidB) || 0;
     var t = parseFloat(b.r.totalBill) || 0;
-    dueA += a; dueB += bs; billSum += t;
+    dueA += Math.max(0, a - pA);
+    dueB += Math.max(0, bs - pB);
+    dueA_gross += a;
+    dueB_gross += bs;
+    billSum += t;
     if (b.table === 'electric') eTotal += t;
     else wTotal += t;
   });
@@ -4336,7 +4370,7 @@ function _renderBalanceCheck() {
   var diffA = paidA - actualA;
   var diffB = paidB - actualB;
 
-  var splitOk = Math.abs((dueA + dueB) - billSum) < 1;
+  var splitOk = Math.abs((dueA_gross + dueB_gross) - billSum) < 1;
   var balanceOk = Math.abs((paidA + paidB) - (actualA + actualB) - (diffA + diffB)) < 1;
   var allOk = splitOk && balanceOk;
 
@@ -4353,16 +4387,35 @@ function _renderBalanceCheck() {
 
   // 1) 勾選面板:獨立卡片,在對帳卡上方(可摺疊)
   var pickerOpen = localStorage.getItem('renthouseBalancePickerOpen') !== '0';
-  var billRowsHtml = allBills.map(function(b) {
+  function fmtPickerUnit(label, due, paid) {
+    if (due <= 0.5) return '';
+    var collect = Math.max(0, due - paid);
+    if (collect <= 0.5) {
+      // 已繳清 → 灰,顯示原 due
+      return '<span style="color:#94a3b8;">' + label + ' ' + due.toFixed(0) + '</span>';
+    }
+    // 未繳清(含 partial)→ 紅,顯示剩餘要付
+    return '<span style="color:#dc2626;font-weight:700;">' + label + ' ' + collect.toFixed(0) + '</span>';
+  }
+  var visibleBills = allBills;
+  var billRowsHtml = visibleBills.map(function(b) {
     var a = _itemDueA({ table: b.table, r: b.r });
     var bs = _itemDueB({ table: b.table, r: b.r });
     var t = parseFloat(b.r.totalBill) || 0;
+    var pA = parseFloat(b.r.paidA) || 0;
+    var pB = parseFloat(b.r.paidB) || 0;
+    var aTxt = fmtPickerUnit('A', a, pA);
+    var bTxt = fmtPickerUnit('B', bs, pB);
+    var parts = [];
+    if (aTxt) parts.push(aTxt);
+    if (bTxt) parts.push(bTxt);
+    var oweText = parts.join(' / ');
     var checked = isChecked(b.table, b.r.id);
-    return '<label style="display:grid;grid-template-columns:24px 1fr 70px 100px;gap:6px;align-items:center;padding:5px 6px;border-bottom:1px dashed #e2e8f0;cursor:pointer;background:' + (checked ? '#fefce8' : 'transparent') + ';">'
+    return '<label style="display:grid;grid-template-columns:24px 1fr 70px 130px;gap:6px;align-items:center;padding:5px 6px;border-bottom:1px dashed #e2e8f0;cursor:pointer;background:' + (checked ? '#fefce8' : 'transparent') + ';">'
       + '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleBalanceBill(\'' + b.table + '\',\'' + b.r.id + '\',this.checked)" style="width:16px;height:16px;accent-color:' + b.kindColor + ';">'
       + '<span style="font-size:12px;"><span style="color:' + b.kindColor + ';font-weight:700;">' + b.icon + ' ' + b.kind + '</span> ' + (b.r.billMonth || '--') + '</span>'
       + '<span style="text-align:right;font-weight:700;font-size:13px;">' + t.toFixed(0) + '</span>'
-      + '<span style="text-align:right;color:#94a3b8;font-size:10px;">A ' + a.toFixed(0) + ' / B ' + bs.toFixed(0) + '</span>'
+      + '<span style="text-align:right;font-size:11px;">' + oweText + '</span>'
     + '</label>';
   }).join('');
 
@@ -4375,7 +4428,7 @@ function _renderBalanceCheck() {
         + '<button onclick="setBalanceSelection(\'none\')" style="background:#94a3b8;color:#fff;border:none;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer;">清空</button>'
       + '</span>'
     + '</div>'
-    + (pickerOpen ? '<div style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;margin-top:6px;">' + billRowsHtml + '</div>' : '')
+    + (pickerOpen ? '<div style="max-height:460px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;margin-top:6px;">' + billRowsHtml + '</div>' : '')
   + '</div>';
 
   // 2) 對帳卡:逐筆列出被勾選的單據(一筆一列);只在某種類完全沒選時加 placeholder 提示
@@ -4395,11 +4448,17 @@ function _renderBalanceCheck() {
   var billRowList = checkedBills.map(function(b) {
     var a = _itemDueA({ table: b.table, r: b.r });
     var bs = _itemDueB({ table: b.table, r: b.r });
+    var pA = parseFloat(b.r.paidA) || 0;
+    var pB = parseFloat(b.r.paidB) || 0;
+    var collectA = Math.max(0, a - pA);
+    var collectB = Math.max(0, bs - pB);
     var t = parseFloat(b.r.totalBill) || 0;
-    return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #e2e8f0;">'
+    var aColor = collectA > 0.5 ? '#dc2626' : '#16a34a';
+    var bColor = collectB > 0.5 ? '#dc2626' : '#16a34a';
+    return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #e2e8f0;gap:6px;align-items:center;flex-wrap:wrap;">'
       + '<span><span style="color:' + b.kindColor + ';font-weight:700;">' + b.icon + ' ' + b.kind + '</span> ' + (b.r.billMonth || '--') + '</span>'
       + '<span style="font-weight:700;">' + t.toFixed(0) + ' 元</span>'
-      + '<span style="color:#94a3b8;font-size:11px;">A ' + a.toFixed(0) + ' / B ' + bs.toFixed(0) + '</span>'
+      + '<span style="font-size:11px;color:#64748b;">應繳金額 <span style="color:' + aColor + ';font-weight:700;">A ' + collectA.toFixed(0) + '</span> / <span style="color:' + bColor + ';font-weight:700;">B ' + collectB.toFixed(0) + '</span></span>'
     + '</div>';
   }).join('');
   if (!hasWater) billRowList += placeholderRow('water');
@@ -4430,10 +4489,27 @@ function _renderBalanceCheck() {
         + '<div style="text-align:right;">合計</div>'
       + '</div>'
       + '<div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;padding:6px 8px;border-bottom:1px solid #e2e8f0;">'
-        + '<div>本期單據</div>'
+        + '<div>本期單據(總)</div>'
+        + '<div style="text-align:right;">' + dueA_gross.toFixed(0) + '</div>'
+        + '<div style="text-align:right;">' + dueB_gross.toFixed(0) + '</div>'
+        + '<div style="text-align:right;font-weight:700;">' + (dueA_gross + dueB_gross).toFixed(0) + '</div>'
+      + '</div>'
+      + (function() {
+          var cellA = dueA_gross - dueA;
+          var cellB = dueB_gross - dueB;
+          if (cellA + cellB <= 0.5) return '';
+          return '<div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#16a34a;font-size:11px;">'
+            + '<div>− 已收<span style="font-size:10px;color:#94a3b8;font-weight:500;"> (cell 已標)</span></div>'
+            + '<div style="text-align:right;">' + (cellA > 0.5 ? cellA.toFixed(0) : '0') + '</div>'
+            + '<div style="text-align:right;">' + (cellB > 0.5 ? cellB.toFixed(0) : '0') + '</div>'
+            + '<div style="text-align:right;font-weight:700;">' + (cellA + cellB).toFixed(0) + '</div>'
+          + '</div>';
+        })()
+      + '<div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;padding:6px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:700;">'
+        + '<div>本期應收</div>'
         + '<div style="text-align:right;">' + dueA.toFixed(0) + '</div>'
         + '<div style="text-align:right;">' + dueB.toFixed(0) + '</div>'
-        + '<div style="text-align:right;font-weight:700;">' + (dueA + dueB).toFixed(0) + '</div>'
+        + '<div style="text-align:right;">' + (dueA + dueB).toFixed(0) + '</div>'
       + '</div>'
       + '<div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;">'
         + '<div>− 上期溢(缺)繳</div>'

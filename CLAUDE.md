@@ -133,6 +133,68 @@ ssh nas "readlink -f /share/CACHEDEV1_DATA/Web/renthouse_backups/db/<file>.sql.g
 
 ---
 
+## 記帳系統(V3.3 — 2026-06-20 dev 改寫:picker 脫鉤 + 自動分配)
+
+V3.3 是 V3.2 的演進(尚未 promote production),核心是把「picker 選的本期單據」跟「cell 已繳/未繳」**脫鉤**,並加上「💾 結算自動分配實收」演算法。痛點解決:房客延遲繳費時,picker 選好對帳期間 → cell 點已繳後,本期應繳不會被洗成 0,可正確做「實收 vs 應繳」對帳。
+
+### 核心改動(5 處)
+1. **picker 預設改「所有未繳清」**(原本只勾最新一期各一)— `_defaultUnpaidCheckedIds()` helper,partial 也算未繳清
+2. **`_unitAccount` 脫鉤** — sumDue = `entries.reduce(s + collect)`(collect = max(0, due - cellPaid),不再用「全付過濾掉」)
+3. **`startNewPeriod` / 💾 結算 自動勾未繳清** — 取代原本清空 `[]`,使用者不用手動再勾
+4. **💾 結算 自動分配實收** — `rolloverPeriod` 寫歷史後,大筆優先付清,credit 用完後小筆 partial。實收 < 應繳 也分配(缺繳場景,小筆變未繳清)。**結算後自動清 實收/調整/payDate + 解鎖 + 重抓 picker**(取代原本只鎖定)
+5. **歷史改條列式** — 原本每期一張大卡片(內含明細 + 4 個 input)→ 每期一行 `📅 日期 (X 筆) · 應繳 X · 實收 Y · 結果` + [✏️套入][🗑️刪]。要編欄位走 ✏️ 套入回帳目卡編輯
+
+### picker UI(2026-06-20 最後形態)
+```
+☐  💧 水費 115/06   602    A 241 / B 361        ← 已繳清(灰)
+☐  ⚡ 電費 115/05   5640   A 2174 / B 3466      ← 已繳清(灰)
+☑  💧 水費 115/04   730    A 292 / B 438        ← 未繳清(紅 + 粗體)
+☑  ⚡ 電費 115/03   4786   A 1953 / B 2833      ← 未繳清(紅 + 粗體)
+```
+- 全付的列**仍顯示**(灰色),不隱藏 — 使用者要看到完整可選清單
+- max-height 460px(從 200 改大)
+- due=0 該戶不顯示(避免「A 0」)
+
+### BALANCE 對帳 表(脫鉤後的 trace)
+```
+                       戶A      戶B     合計
+本期單據(總)          2707    4265   6972  ← gross,跟「總帳單合計」對齊
+− 已收 (cell 已標)     292      0     292  ← 顯式列出 (0 時整行隱藏)
+本期應收              2415    4265   6680  ← net,灰底加粗
+− 上期溢(缺)繳         0       0      0
++ 調整                 0       0      0
+本期應繳金額          2415    4265   6680
+− 本期實收            0       0      0
+= 本期溢(缺)繳        -2415   -4265  -6680
+```
+- 拆分檢核(✓ 拆分 OK)用 gross 算,cell paid 不會影響
+
+### 列印房客通知單(維持簡潔)
+- **不印已收的**(只列當下要付的);選擇 (b) — 給房客乾淨的應繳通知
+- 帳目卡內部則列全 picker(已收劃線 + (已收 X) 標籤),兩種觀點分別給不同對象
+
+### 自動分配演算法(`rolloverPeriod`)
+```js
+// 蒐集 picker 中該戶尚未付清的 items
+// 排序:remaining DESC(大筆優先)
+// credit = received
+// for each item: pay = min(remaining, credit); newPaid = currentPaid + pay; credit -= pay
+// API: 一個 item 一個 fetch set_paid_amount
+```
+- 範例:實收 2000、picker A戶 [電 1953, 水 292]
+  - 電 1953 全付灰 + 水 47 partial → picker 顯示「A 245」紅(剩 245)
+- F12 Console 有 `[auto-distribute]` 完整 log
+
+### 歷史 schema 不變(只是 UI 改條列)
+`renthousePaymentHistory[i].pickerSelection` 仍含完整 snapshot,套入時逐欄位比對邏輯保留。
+
+### Promote 注意(從 V3.2 → V3.3)
+- 影響檔案僅 `index-dev.html`(290 KB → 297 KB)
+- localStorage key 全相容(沒新 key,沒刪 key)
+- 行為變更:**舊使用者第一次刷新後**,picker 會自動勾「所有未繳清」(原本只勾最新一期)— 如果使用者要還原可手動「全清空」按鈕
+
+---
+
 ## 記帳系統(V3.2 — 2026-06-07 下午定型,集 30+ 輪迭代後)
 
 ### 整體版面(記帳 tab)
