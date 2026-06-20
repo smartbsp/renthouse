@@ -4580,6 +4580,7 @@ function viewPaymentHistory(unit) {
         + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
           + '<button onclick="toggleShowAllHistory(\'' + unit + '\')" style="background:' + (window._showAllHistory ? '#dc2626' : '#64748b') + ';color:#fff;border:none;font-size:11px;padding:5px 9px;border-radius:5px;cursor:pointer;font-weight:700;">' + (window._showAllHistory ? '📜 顯示全部(房東 audit)' : '📜 僅當前 era') + '</button>'
           + (history.length > 0 ? '<button onclick="printTenantStatement(\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;font-size:12px;padding:5px 10px;border-radius:5px;cursor:pointer;font-weight:700;">📊 對帳單</button>' : '')
+          + (history.length > 0 ? '<button onclick="printPrepayReport(\'' + unit + '\')" style="background:#16a34a;color:#fff;border:none;font-size:12px;padding:5px 10px;border-radius:5px;cursor:pointer;font-weight:700;">💰 預繳明細</button>' : '')
           + '<button onclick="document.getElementById(\'paymentHistoryOverlay\').remove()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1;">✕</button>'
         + '</div>'
       + '</div>'
@@ -4974,6 +4975,154 @@ function _saveEditedHistory(settledAt, unit) {
   var hov = document.getElementById('paymentHistoryOverlay');
   if (hov) { hov.remove(); viewPaymentHistory(unit); }
   renderSummary();
+}
+
+// 💰 預繳專屬報表:FIFO 追蹤每筆預繳被哪些扣款用掉(列印)
+function printPrepayReport(unit) {
+  var rawHistory = (JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]'))
+    .filter(function(h) { return h.unit === unit; });
+  var eraStart = window._showAllHistory ? null : _getCurrentEraStart(unit);
+  var history = rawHistory.filter(function(h) {
+    if (!eraStart) return true;
+    return (h.settledAt || '') > eraStart;
+  }).sort(function(a, b) {
+    var c = (a.accountDate || '').localeCompare(b.accountDate || '');
+    if (c) return c;
+    return (a.settledAt || '').localeCompare(b.settledAt || '');
+  });
+
+  // 拆成 events stream(signed amount)
+  var events = [];
+  history.forEach(function(h) {
+    var r = parseFloat(h.received) || 0;
+    var d = parseFloat(h.totalPaidDue) || 0;
+    var a = parseFloat(h.adjust) || 0;
+    if (h.type === 'prepay') {
+      events.push({ date: h.accountDate, kind: 'prepay', amount: r, label: '💰 預繳' + (h.note ? ' · ' + h.note : '') });
+    } else if (h.type === 'withdraw') {
+      events.push({ date: h.accountDate, kind: 'withdraw', amount: r, label: '💸 提款' + (h.note ? ' · ' + h.note : '') });
+    } else if (h.type === 'close') {
+      if (r !== 0) events.push({ date: h.accountDate, kind: 'close', amount: r, label: '📁 ' + (h.closeType || '結清') + (h.note ? ' · ' + h.note : '') });
+    } else {
+      // settle:拆 income + 各 bill outflow + adjust
+      if (r !== 0) events.push({ date: h.accountDate, kind: 'settle_in', amount: r, label: '🟢 結算實收' });
+      (h.paidItems || []).forEach(function(it) {
+        var due = parseFloat(it.due) || 0;
+        if (due > 0) events.push({ date: h.accountDate, kind: 'bill', amount: -due, label: (it.type || '') + ' ' + (it.billMonth || '') });
+      });
+      if (a !== 0) events.push({ date: h.accountDate, kind: 'adjust', amount: -a, label: a > 0 ? '⚙️ 調整(補繳)' : '⚙️ 調整(折讓)' });
+    }
+  });
+
+  // FIFO:deposits queue,每筆 outflow 從最早 deposit 扣
+  var openDeposits = [];   // { date, amount, remaining, label, deductions }
+  var closedDeposits = []; // 用完的
+  var deficits = [];        // 沒 deposit 可扣的 outflows
+
+  events.forEach(function(e) {
+    if (e.amount > 0) {
+      openDeposits.push({ date: e.date, amount: e.amount, remaining: e.amount, label: e.label, deductions: [] });
+    } else if (e.amount < 0) {
+      var needed = -e.amount;
+      while (needed > 0 && openDeposits.length > 0) {
+        var dep = openDeposits[0];
+        var take = Math.min(needed, dep.remaining);
+        dep.remaining -= take;
+        dep.deductions.push({ date: e.date, label: e.label, amount: take });
+        needed -= take;
+        if (dep.remaining <= 0) {
+          closedDeposits.push(dep);
+          openDeposits.shift();
+        }
+      }
+      if (needed > 0) {
+        deficits.push({ date: e.date, label: e.label, amount: needed });
+      }
+    }
+  });
+
+  if (openDeposits.length === 0 && closedDeposits.length === 0 && deficits.length === 0) {
+    showToast('⚠️ 戶 ' + unit + ' 尚無預繳/扣款資料');
+    return;
+  }
+
+  var ident = UNIT_COLOR[unit];
+  function depositCard(dep, isOpen) {
+    var consumed = dep.amount - dep.remaining;
+    var pct = dep.amount > 0 ? Math.round(consumed / dep.amount * 100) : 0;
+    var dedHtml = dep.deductions.map(function(d) {
+      return '<tr><td style="padding:4px 8px;color:#64748b;">' + d.date + '</td>'
+        + '<td style="padding:4px 8px;">' + d.label + '</td>'
+        + '<td style="padding:4px 8px;text-align:right;color:#dc2626;">−' + Math.round(d.amount) + '</td></tr>';
+    }).join('');
+    if (!dedHtml) dedHtml = '<tr><td colspan="3" style="padding:8px;color:#94a3b8;text-align:center;font-style:italic;">(尚未扣抵)</td></tr>';
+    return '<div style="margin-bottom:12px;border:1.5px solid ' + ident + ';border-radius:10px;background:#fff;overflow:hidden;">'
+      + '<div style="padding:10px 14px;background:' + ident + ';color:#fff;display:flex;justify-content:space-between;align-items:center;">'
+        + '<span style="font-weight:700;">' + dep.label + ' · ' + dep.date + '</span>'
+        + '<span style="font-size:13px;">' + (isOpen ? '剩餘 ' : '✓ 已用完 ') + Math.round(dep.remaining) + ' / ' + Math.round(dep.amount) + '</span>'
+      + '</div>'
+      + '<div style="padding:6px 10px;background:#f1f5f9;font-size:11px;color:#64748b;">扣抵明細(用掉 ' + Math.round(consumed) + ',佔 ' + pct + '%):</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">' + dedHtml + '</table>'
+    + '</div>';
+  }
+
+  var bodyHtml = '';
+  if (openDeposits.length > 0) {
+    bodyHtml += '<h3 style="font-size:14px;color:#16a34a;margin:8px 0;">⚡ 仍有餘額(' + openDeposits.length + ' 筆)</h3>';
+    openDeposits.forEach(function(d) { bodyHtml += depositCard(d, true); });
+  }
+  if (closedDeposits.length > 0) {
+    bodyHtml += '<h3 style="font-size:14px;color:#64748b;margin:14px 0 8px;">✓ 已用完(' + closedDeposits.length + ' 筆)</h3>';
+    closedDeposits.forEach(function(d) { bodyHtml += depositCard(d, false); });
+  }
+  if (deficits.length > 0) {
+    bodyHtml += '<h3 style="font-size:14px;color:#dc2626;margin:14px 0 8px;">⚠️ 缺繳項目(無預繳可扣,房客需補)</h3>';
+    var defRows = deficits.map(function(d) {
+      return '<tr><td style="padding:6px 8px;color:#64748b;">' + d.date + '</td>'
+        + '<td style="padding:6px 8px;">' + d.label + '</td>'
+        + '<td style="padding:6px 8px;text-align:right;color:#dc2626;font-weight:700;">' + Math.round(d.amount) + '</td></tr>';
+    }).join('');
+    bodyHtml += '<div style="border:1.5px solid #dc2626;border-radius:8px;background:#fef2f2;overflow:hidden;">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px;">' + defRows + '</table>'
+    + '</div>';
+  }
+
+  var totalRemaining = openDeposits.reduce(function(s, d) { return s + d.remaining; }, 0);
+  var totalDeficit = deficits.reduce(function(s, d) { return s + d.amount; }, 0);
+  var net = totalRemaining - totalDeficit;
+  var netColor = net > 0.5 ? '#16a34a' : net < -0.5 ? '#dc2626' : '#475569';
+  var netLabel = net > 0.5 ? '預繳餘額(可扣抵後續)' : net < -0.5 ? '累欠待補' : '已平';
+
+  var html = '<!doctype html><html><head><meta charset="utf-8"><title>戶 ' + unit + ' 預繳扣款明細</title>'
+    + '<style>'
+    + '*{box-sizing:border-box;margin:0;padding:0;}'
+    + 'body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;background:#f8fafc;padding:20px 12px;color:#1e293b;}'
+    + '.sheet{max-width:680px;margin:0 auto;}'
+    + '.head{background:linear-gradient(135deg,' + ident + ',' + ident + 'dd);color:#fff;border-radius:12px 12px 0 0;padding:18px 22px;}'
+    + '.head h1{font-size:20px;font-weight:800;}'
+    + '.head .sub{font-size:12px;opacity:0.9;margin-top:4px;}'
+    + '.body{background:#fff;padding:14px 18px;border-radius:0 0 12px 12px;box-shadow:0 4px 12px rgba(0,0,0,0.06);}'
+    + '.footer{margin-top:14px;background:linear-gradient(135deg,' + netColor + '15,' + netColor + '25);border:2px solid ' + netColor + ';border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;}'
+    + '.footer .label{font-size:13px;color:' + netColor + ';font-weight:700;}'
+    + '.footer .amount{font-size:26px;color:' + netColor + ';font-weight:800;}'
+    + '.actions{display:flex;gap:8px;max-width:680px;margin:14px auto 0;}'
+    + '.actions button{flex:1;padding:11px;font-size:13px;font-weight:700;border:none;border-radius:8px;cursor:pointer;color:#fff;}'
+    + '.btn-print{background:' + ident + ';}'
+    + '.btn-close{background:#94a3b8;}'
+    + '@media print{body{background:#fff;padding:0;}.actions{display:none;}.body,.footer{box-shadow:none;}}'
+    + '</style></head><body>'
+    + '<div class="sheet">'
+      + '<div class="head"><h1>💰 戶 ' + unit + ' 預繳扣款明細</h1><div class="sub">FIFO · 每筆預繳追蹤被哪些扣款用掉</div></div>'
+      + '<div class="body">' + bodyHtml + '</div>'
+      + '<div class="footer"><span class="label">📌 ' + netLabel + '</span><span class="amount">' + (net > 0 ? '+' : '') + Math.round(net) + ' 元</span></div>'
+    + '</div>'
+    + '<div class="actions"><button class="btn-print" onclick="window.print()">🖨 列印</button><button class="btn-close" onclick="window.close()">關閉</button></div>'
+  + '</body></html>';
+
+  var w = window.open('', '_blank');
+  if (!w) { showToast('⚠️ 瀏覽器擋了彈出視窗,請允許後再試'); return; }
+  w.document.write(html);
+  w.document.close();
 }
 
 // 房客對帳單列印:銀行對帳單風格,每筆 bill / 實收 / 預繳 / 提款 各自一行,不互抵
