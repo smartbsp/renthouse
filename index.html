@@ -3514,18 +3514,25 @@ function _bIdsInHistory() {
   return ids;
 }
 
-// V3.6:picker 預設 = 任一戶 cell 還未繳清 的 bill(history dedup 不需要,因 wallet 不會雙算)
+// V3.7:picker 預設 = 任一戶「沒結算過 AND cell 還未繳清」的 bill
+// V3.7 公式有 double-count 風險,所以 picker 預設要 dedup by history
 function _defaultUnpaidCheckedIds() {
   var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   var water = waterRecords || [];
+  var aSettled = _bIdsSettledBy('A');
+  var bSettled = _bIdsSettledBy('B');
   var ids = [];
   function scan(arr, table) {
     arr.filter(function(r) { return parseInt(r.paid, 10) === 1; }).forEach(function(r) {
+      var key = table + ':' + String(r.id);
       var dueA = _itemDueA({ table: table, r: r });
       var dueB = _itemDueB({ table: table, r: r });
       var pA = parseFloat(r.paidA) || 0;
       var pB = parseFloat(r.paidB) || 0;
-      if ((dueA > 0 && pA < dueA - 0.5) || (dueB > 0 && pB < dueB - 0.5)) {
+      // 兩戶任一邊 (cell未繳清 AND 該戶沒 settle 過) → 進 picker
+      var aNeeds = (dueA > 0 && pA < dueA - 0.5) && !aSettled[key];
+      var bNeeds = (dueB > 0 && pB < dueB - 0.5) && !bSettled[key];
+      if (aNeeds || bNeeds) {
         ids.push({ table: table, id: String(r.id) });
       }
     });
@@ -4237,8 +4244,9 @@ function startNewPeriod(unit) {
   // picker 自動勾「當下還未繳清」(partial 也算未繳清)
   var autoIds = _defaultUnpaidCheckedIds();
   localStorage.setItem('renthouseBalanceCheckedIds', JSON.stringify(autoIds));
-  showToast('🆕 戶 ' + unit + ' 已開新期,已自動勾 ' + autoIds.length + ' 筆未繳清單據');
+  showToast('↶ 戶 ' + unit + ' 已重設(picker 重抓 ' + autoIds.length + ' 筆,不寫 DB)');
   renderSummary();
+  renderAccountStatus();
 }
 
 function filterPaymentHistory(query) {

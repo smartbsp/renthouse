@@ -305,7 +305,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pickerSelection = isset($body['pickerSelection']) ? json_encode($body['pickerSelection'], JSON_UNESCAPED_UNICODE) : '[]';
     $note = $body['note'] ?? '';
     $updatedAt = $body['updatedAt'] ?? date('c');
-    $stmt->bind_param('sssssddddddssssss',
+    $stmt->bind_param('sssssdddddssssss',
       $settledAt, $unit, $type, $accountDate, $payDate,
       $received, $adjust, $totalPaidDue, $carryIn, $carryOut,
       $closeType, $closeAction, $paidItems, $pickerSelection, $note, $updatedAt);
@@ -361,7 +361,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pickerSelection = isset($h['pickerSelection']) ? json_encode($h['pickerSelection'], JSON_UNESCAPED_UNICODE) : '[]';
       $note = $h['note'] ?? '';
       $updatedAt = $h['updatedAt'] ?? date('c');
-      $stmt->bind_param('sssssddddddssssss',
+      $stmt->bind_param('sssssdddddssssss',
         $settledAt, $unit, $type, $accountDate, $payDate,
         $received, $adjust, $totalPaidDue, $carryIn, $carryOut,
         $closeType, $closeAction, $paidItems, $pickerSelection, $note, $updatedAt);
