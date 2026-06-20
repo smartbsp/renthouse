@@ -4029,15 +4029,20 @@ function _snapshotPaidItems(unit) {
     var r = arr.find(function(x) { return String(x.id) === String(c.id); });
     if (!r) return;
     var it = { table: c.table, r: r };
-    var due = unit === 'A' ? _itemDueA(it) : _itemDueB(it);
-    if (due <= 0) return;
-    // 脫鉤 cell 已結:picker 全進 snapshot,該期單據完整
+    var cost = unit === 'A' ? _itemDueA(it) : _itemDueB(it);  // gross
+    if (cost <= 0) return;
+    // ★ V3.7: due = collect(remaining = cost − cell paid),只算「本期實際要收」
+    //   partial bills 不會雙重算進 totalPaidDue
     var unitPaid = parseFloat(unit === 'A' ? r.paidA : r.paidB) || 0;
+    var collect = Math.max(0, cost - unitPaid);
+    if (collect <= 0.5) return;  // 已全收的不進 totalPaidDue
     items.push({
       type: c.table === 'electric' ? '⚡電費' : '💧水費',
       billMonth: r.billMonth || '--',
-      due: due,
-      done: unitPaid >= due - 0.5
+      due: collect,         // collect (本期實際要收)
+      origCost: cost,        // gross (informational)
+      paid_before: unitPaid,
+      done: false            // 進到這裡的都未繳清
     });
   });
   return items;
