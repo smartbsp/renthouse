@@ -134,7 +134,42 @@ ssh nas "readlink -f /share/CACHEDEV1_DATA/Web/renthouse_backups/db/<file>.sql.g
 
 ---
 
-## 🎯 記帳系統 顯示+邏輯 共識(V3.3,2026-06-20 promote 後定型)
+## 🎯 記帳系統 顯示+邏輯 共識(V3.4,2026-06-20 — 預繳帳戶模型)
+
+**V3.4 重設計核心**:用「預繳餘額(wallet)」取代「上期溢/缺繳」累積邏輯。每戶一個 running balance,所有 history 紀錄是該 wallet 的 transaction log。
+
+### 💰 預繳帳戶模型(取代 上期/carryIn/carryOut 概念)
+- 每戶一個 running balance(累加 wallet):
+  - `balance > 0` → **預繳餘額**(房客先存的,綠)
+  - `balance < 0` → **缺繳**(房客欠的,紅)
+  - `balance = 0` → 結清
+- Balance 永遠是 history 的 event-sourcing 結果:
+  ```
+  balance = Σ (received − totalPaidDue − adjust) for all history records of unit
+  ```
+- 公式:`本期結算後 balance = balance(結算前) + 實收 − 本期應繳金額 − 調整`
+- **「上期溢/缺繳」概念已移除** — 那是 V3.3 的累積邏輯,現在 wallet 接管
+
+### 🏦 頂部 fixed bar(2 個預繳帳戶)
+```
+┌──────────────────────────────────────┐
+│ 戶 A 預繳帳戶  [💰預繳]              │
+│ 💰 預繳餘額(可扣) +1,200 元           │
+├──────────────────────────────────────┤
+│ 戶 B 預繳帳戶  [💰預繳]              │
+│ ⚠️ 缺繳(待補) -500 元                 │
+└──────────────────────────────────────┘
+```
+- 由 `renderAccountStatus()` 渲染,讀 `_computeBalance(unit)`
+- 「💰 預繳」按鈕 → opens `openDepositPrepayModal()` → 寫 history (type='prepay', received=X, totalPaidDue=0) → balance +=X
+
+### 🧱 4 種 history record 操作 vs balance
+| 動作 | 在 history 寫什麼 | balance 變化 |
+|---|---|---|
+| **💰 預繳 modal** | `{type:'prepay', received:+X, totalPaidDue:0}` | +X |
+| **💾 結算(主帳目卡)** | `{received, totalPaidDue, adjust, picker, paidItems}` | +received −totalPaidDue −adjust |
+| **✏️ 修改(獨立 modal)** | update 同筆 history 的 received/adjust/accountDate/payDate | 整個 history replay → balance 自動重算 |
+| **🗑️ 刪除** | 移除該筆 history | 整個 history replay → balance 自動重算
 
 **讀這個 section 之前先別動 code。** 經過 30+ 輪迭代凝結出的鐵則,任何修改都應該對齊以下原則。違反時直接退回,不要先動手。
 
@@ -163,21 +198,29 @@ ssh nas "readlink -f /share/CACHEDEV1_DATA/Web/renthouse_backups/db/<file>.sql.g
 - Cell 點到的視覺效果僅:帳目卡明細 該行劃線 + `(已收 X)` tag
 - BALANCE 對帳要顯式 trace 已收金額(`− 已收 (cell 已標)` 行)
 
-### 🔄 房客延遲繳費的標準對帳流程
-1. **picker 自動勾「所有未繳清」**(`_defaultUnpaidCheckedIds()`,partial 也算)
-2. 房客匯款 → 填**實收款項**
-3. 按 **💾 結算** → 自動執行:
-   - 寫該期歷史 (carryOut = 實收 − 應繳)
-   - **自動分配實收**(`rolloverPeriod`):排序 picker 中該戶未付清 items by remaining DESC → 大筆優先付清 → credit 用完小筆變 partial
-   - 清空 實收 / 調整 / payDate
-   - 解鎖 + 重抓 picker(下期自動帶剩下的未繳清)
-4. F12 Console 有 `[auto-distribute]` log 可驗證
-- 缺繳場景例:實收 2000、picker A 戶 [電 1953, 水 292] → 電 1953 全付灰 + 水 47 partial 紅(剩 245 自動進下期 picker)
+### 🔄 房客延遲繳費的標準流程(V3.4 預繳模型)
+1. 房客先存錢 → 頂部 [💰 預繳] → modal 填金額 → balance +=
+2. 該期帳單到 → picker 自動勾「所有未繳清」+ 填實收 → 💾 結算
+3. 系統:wallet 自動扣本期應繳 → 寫 history → auto-distribute cells → 清空欄位
+4. 看頂部 balance 知道餘額(正=還有預繳、負=缺繳)
+5. 想改 → 歷史 ✏️ 修改 → 獨立 modal 改 received/adjust/accountDate → 確定 → balance 自動 replay
+6. 想刪 → 🗑️ → balance 自動 replay
 
-### 🖨 列印 vs 帳目卡 (故意維持兩種觀點,不要對齊)
-- **帳目卡內**(房東面):列 picker 全部,已收劃線 + `(已收 X)` tag
-- **列印**(給房客):**只列當下要付的**,已收的不印 — 給房客乾淨的應繳通知
-- 不要試圖統一兩者,使用者刻意分開
+**核心解放**:不再需要往前找「上期 carryOut」,balance 就是 wallet 本身。
+
+### 🚧 為什麼 ✏️ 修改 走獨立 modal(不 load 進主帳目卡)
+過去 V3.3 把 修改 設計成「load 進帳目卡編輯」,踩到 3 個雷:
+1. **編輯時 cell 已被 💾 auto-distribute 改過** → 主卡看到「已收 0」→ sumDue=0 → 實收看起來變溢繳
+2. **跨期 cell 互相影響** → 還原舊期 cell 狀態會破壞後續期紀錄
+3. **重複 auto-distribute** → 再 💾 又跑一次,cell paid 爆量
+
+**解法**:歷史編輯只動 history record 本身,不動 cell。Cell 仍是「房東現實追蹤」(可手動點),history 是「紙面結算紀錄」。兩者邏輯邊界清楚。V3.4 進一步:balance 是 wallet,不再有「上期」概念,編輯時用 `_computeBalance(unit, accountDate, excludeSettledAt)` 排除自己 + 只算更早 records。
+
+### 🖨 列印 vs 帳目卡 (兩者邏輯相同,只是渲染不同)
+- **共同規則**:**繳清的不出現**(連劃線都不要),partial 仍出現 + 加小字「(原 X 已繳 Y)」
+- **帳目卡內**(房東面):上方 trace 行(本期單據總 / − 已收 / 本期應收)讓總額可驗證
+- **列印**(給房客):直接列未繳 + 大字本期應繳金額,不需要 trace
+- 共同:partial 顯示 collect(剩餘要付),不顯示原 due
 
 ### 📂 歷史 overlay 是條列式(不是卡片式)
 - 每期一行:`📅 日期 (X 筆) · 應繳 X · 實收 Y · 結果(✨溢繳/⚠️缺繳/✓結清)` + [✏️套入][🗑️刪]
