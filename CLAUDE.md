@@ -33,7 +33,8 @@ scp index-dev.html nas:/share/CACHEDEV1_DATA/Web/renthouse-dev/index.html
 - 2026-06-06 晚上:V3.1 promote(commit `ddaff1e`,sw cache v5→v6)
 - 2026-06-07 下午:V3.2 promote(commit `8a8de67`,sw cache v6→v7)— 記帳系統最終定型
 - 2026-06-20 下午:V3.3 promote(commit `a52049e`,sw cache v7→v8)— picker 脫鉤 + 自動分配實收 + 歷史條列式
-- 2026-06-20 晚上:**V3.6 promote**(commit `cc5247e`,sw cache v8→v9)— 跳過 V3.4/V3.5(都只在 dev iterate);**會計模型重設計** 雙 ledger 分離 + DB 持久化 wallet 歷史 + 換約/續約/結清 + per-unit 防干涉 + 房東 audit 查詢
+- 2026-06-20 晚上:V3.6 promote(commit `cc5247e`,sw cache v8→v9)— 雙 ledger 分離 + DB 持久化 wallet 歷史 + 換約/續約/結清 + per-unit 防干涉 + 房東 audit 查詢
+- 2026-06-21 凌晨:**V3.7 promote**(commit 即將,sw cache v9→v10)— 公式回 V3.4 (received-totalPaidDue-adjust) + 單一儲存按鈕(取代 per-unit)+ BALANCE 表即時試算 + 離開警告 + api.php bind_param 修(原 17 chars 多 1 個 d) + 預繳 FIFO 報表 + 頂部 📜 紀錄 button
 
 ---
 
@@ -135,7 +136,80 @@ ssh nas "readlink -f /share/CACHEDEV1_DATA/Web/renthouse_backups/db/<file>.sql.g
 
 ---
 
-## 🎯 記帳系統 顯示+邏輯 共識(V3.6,2026-06-20 promote — 雙 ledger + DB 持久化)
+## 🎯 記帳系統 顯示+邏輯 共識(V3.7,2026-06-21 promote)
+
+**V3.7 公式(最終版):**
+```
+wallet_change = received − totalPaidDue − adjust  (per history record)
+wallet(unit) = Σ wallet_change for unit's history
+
+bills_outstanding(unit) = Σ(paid=1 bills 該戶 cost − cell paid)  獨立 ledger
+
+淨值 = wallet − bills_outstanding
+```
+
+**why V3.7 not V3.6?** V3.6 (wallet = cash flow only) 不扣 totalPaidDue,結果「房客付 2415 = 本期 2415 → wallet 變 +2415」不對。V3.7 改成 wallet 扣 bill cost(回 V3.4 公式),房客剛好付就 wallet 不變。V3.6 雙 ledger UI 概念保留(wallet + 帳單未收 + 淨值)。
+
+**雙 ledger 顯示(頂部 預繳帳戶 bar):**
+```
+戶 A 預繳帳戶  [💰 預繳] [💸 提款] [📁 結清] [📜 紀錄]
+💰 wallet (結清)              +1000 元   ← cash flow ledger
+📋 帳單未收 (點看明細)            0 元   ← bills ledger (獨立顯示)
+淨值: +1000 元 (wallet − 未收)
+```
+
+**統一儲存 UI(V3.7 重大改):**
+- 帳目卡 footer 拿掉 per-unit 「✚ 新增結算」按鈕
+- BALANCE 對帳 表 下方 1 顆大按鈕「💾 儲存結算(A + B)」
+- saveBothUnits() 智慧判斷:某戶沒輸入也沒選 picker 就跳過該戶
+- ↶ 取消重設 也統一(`resetBothUnits()`)
+
+**即時試算(input live update):**
+- input 用 `oninput` 即時寫 localStorage
+- `_liveUpdateBalanceRow(unit)` 直接改 DOM 3 處:
+  - 帳目卡 結算後預繳 / 還需付 / 借貸平衡 panel
+  - BALANCE 對帳 表「結算後預繳」row(A/B/總)
+- 不 re-render 整張卡(保 input 焦點)
+
+**離開警告:**
+- `window.beforeunload`:若 A 或 B 有實收/調整 ≠ 0 → 跳警告
+
+**DB 持久化(critical):**
+- 表 `renthouse_payment_history`(16 欄,settledAt PK)
+- api.php endpoints:`wallet_list` / `wallet_upsert` / `wallet_delete` / `wallet_bulk_import`
+- 所有 mutation 都 `_walletSyncSave` / `_walletSyncDelete`
+- bind_param type string 16 chars (`sssssdddddssssss`)— 早期 17 chars bug 造成 500 error,wallet 沒進 DB,全靠 localStorage 撐(危險)。V3.7 修好
+- 唯一永久刪除路徑:房東 SQL `DELETE FROM renthouse_payment_history WHERE ...`
+
+**picker 預設「未結算 AND cell 未繳清」(雙重防呆):**
+- `_defaultUnpaidCheckedIds()` 用 `_bIdsSettledBy(unit)` per-unit dedup
+- 避免 V3.7 公式的 double-count 風險(同張 bill 結算 2 次會被扣兩遍 wallet)
+
+**4 個獨立查看入口:**
+| 入口 | 看什麼 |
+|---|---|
+| 頂部 wallet 數字 | 即時餘額 |
+| 頂部 [📜 紀錄] / 帳目卡 [📋 歷史] | 所有 wallet records list,可 ✏️ 修改 / 🗑️ 刪 |
+| 歷史 overlay [📊 對帳單] | 銀行對帳單風格列印(bills + cash flow 一起) |
+| 歷史 overlay [💰 預繳明細] | FIFO 報表:每筆預繳被哪些扣抵 |
+
+**換約 / 續約 (📁 結清):**
+- 換約 = 新房客,era 界線(舊資料隱藏,房東切「📜 顯示全部」可 audit)
+- 續約 = 同房客新合約,不切 era
+- 認賠/沖銷 = balance 直接歸 0
+- 補繳 / 退款 = 金額可改
+
+**4 個基本動作(全 DB 操作):**
+| 動作 | DB 行為 |
+|---|---|
+| 新增 | INSERT(wallet_upsert) |
+| 修改 | UPDATE(wallet_upsert with same settledAt) |
+| 刪除 | DELETE(wallet_delete)+ 自動 revert cells(paid_before) |
+| 取消 | 不寫 DB(只清 localStorage) |
+
+---
+
+## 🎯 記帳系統 顯示+邏輯 共識(V3.6,deprecated — 留作 V3.6 → V3.7 演進對照)
 
 **V3.6 重設計核心(取代 V3.4/V3.5 模型,真正治本):**
 - **wallet ledger**(cash flow):`Σ history received − Σ history adjust`,只記預繳/提款/結清/結算 received/adjust

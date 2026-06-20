@@ -1,5 +1,76 @@
 # 工作日誌
 
+## 2026-06-21 凌晨 — V3.7 promote(會計模型最終定型 + UI 統一)
+
+### 主軸
+V3.6 promote 後當天再 iterate 一輪 → V3.7。主要 V3.6 的 wallet 公式(只算 cash flow)被使用者反映「房客付 2415 結算後預繳變 2415」很奇怪 → 改回 V3.4 公式 `wallet = received − totalPaidDue − adjust`。同時做 4 件大改動 + 修 api.php 500 error。
+
+### V3.6 → V3.7 變更
+
+| 項目 | V3.6 | V3.7 |
+|---|---|---|
+| wallet 公式 | `Σ(received − adjust)` 不扣 bill | `Σ(received − totalPaidDue − adjust)` 扣 bill |
+| 房客剛好付 = 本期應繳 | wallet += received 怪 | wallet 不變 ✓ |
+| picker 預設 dedup | 不 dedup(認為不需要) | per-unit history dedup 加回(避免 V3.7 雙重算) |
+| 儲存按鈕 | 帳目卡 per-unit 2 顆 | BALANCE 表下方 1 顆「💾 儲存結算(A+B)」 |
+| BALANCE 表 結算後預繳 | 350ms debounce | 即時(direct DOM update) |
+| 離開警告 | 無 | beforeunload event |
+| api.php wallet_upsert | 500 error(bind_param 17/16 字數錯) | 修(`sssssdddddssssss`) |
+
+### 一天 5 個雷
+**雷 1:V3.6「結算後預繳變 +received」**
+- bug:wallet 公式只算 received - adjust
+- 解:V3.7 加回 - totalPaidDue
+
+**雷 2:`_snapshotPaidItems` 用 gross cost**
+- partial bill(已 paid 部分)再結算 → 雙扣
+- 解:`due = collect (cost - cell paid)`
+
+**雷 3:api.php bind_param 17 chars but 16 vars → 500 error**
+- 整天 wallet 紀錄都沒進 DB(localStorage 撐)
+- 解:type string 改成 16 chars(`sssssdddddssssss`)
+
+**雷 4:V3.7 picker 沒 dedup → 雙重算(-2 倍)**
+- 同張 bill 結算 2 次,wallet 各扣一次 → -2x
+- 解:`_defaultUnpaidCheckedIds` 加 `_bIdsSettledBy(unit)` dedup
+
+**雷 5:user 嫌 wallet 數字解讀混亂**
+- 例:wallet 0,bills_outstanding 1415,淨值 -1415
+- 解:加 [📋 帳單未收] 點看明細 modal,FIFO 預繳報表
+
+### V3.7 4 個查看入口
+1. 頂部 wallet 數字(即時)
+2. 頂部 [📜 紀錄] / 帳目卡 [📋 歷史](list,可 ✏️/🗑️)
+3. 歷史 overlay [📊 對帳單](銀行對帳單,bills+cash flow)
+4. 歷史 overlay [💰 預繳明細](FIFO,每筆預繳被誰扣抵)
+
+### V3.7 4 個 基本動作 = DB 操作
+| 動作 | DB 行為 |
+|---|---|
+| 新增 | INSERT |
+| 修改 | UPDATE(同 settledAt upsert) |
+| 刪除 | DELETE + 自動 revert cells(從 paid_before) |
+| 取消 | 不寫 DB |
+
+### Promote 流程
+- 已直接 scp 上 production(沒走完整 backup → 因為一直在 iterate)
+- sw cache v9 → v10(加上 register `v=5→v=10` 對齊)
+
+### 對話節奏教訓(這場累積)
+- **user 拼錯字 / 簡寫要當提示**(「B水費361已繳334的資料呢」→ 是要解釋資料來源,不是要 query)
+- **「-2 倍」是 double-count 證據**,從數字反推 bug 位置最快
+- **API 500 silent 失敗**:user 沒 toast 看到 (因 fetch.catch 只 console.log)。教訓:DB sync 結果要明確 toast
+- **公式變動 3 次後** 才確認 V3.7 公式合用 user 直覺。下次:**先用比喻問清楚** user 心智模型再 code
+- **DB 持久化是 critical 改動**,當天就要 carefully 測 API endpoints(不能只 trust frontend)
+
+### 還沒做(下次)
+- [ ] 寫 V3.7 test scripts(`test_v37_wallet.js`)
+- [ ] 房東 audit 工具加「清資料庫」UI(房客換約後清舊紀錄)
+- [ ] 帳目卡 房東面 顯示「目前 wallet 餘額(top bar 同步)」獨立行
+- [ ] DB 持久化 sync 失敗的 retry / queue(目前只 silent fail)
+
+---
+
 ## 2026-06-20 晚場 — V3.6 promote(雙 ledger 模型 + DB 持久化 wallet)
 
 ### 主軸
