@@ -3871,31 +3871,24 @@ function _getCurrentEraStart(unit) {
   return latestSa;
 }
 
-// ★ V3.6 模型(純 cash flow,bill 獨立 ledger)★
+// ★ V3.7 模型 ★
+// wallet(unit) = Σ (received − totalPaidDue − adjust) for unit's history
 //
-// wallet(unit) = Σ history 的 received(signed) − Σ history 的 adjust
-//             ≡ 房客在你這的「現金存款」
+//   結算 received 用來 cover 本期 bill (totalPaidDue),只有差額影響 wallet:
+//     received > totalPaidDue+adjust → 多付的進 wallet(預繳)
+//     received = totalPaidDue+adjust → wallet 不變(剛好 cover)
+//     received < totalPaidDue+adjust → wallet 減(差額變缺繳)
+//   預繳/提款/結清 (totalPaidDue=0) → wallet += received
 //
-//   預繳 +X            → cash_in += X
-//   提款 −X            → cash_in -= X (history.received 已是 -X)
-//   結清 退款          → 同提款 (received 已 signed)
-//   結清 補繳          → 同預繳
-//   結算 received      → cash_in += received(房客交給房東的錢)
-//   結算 adjust > 0 (補) → cash_in 影響 = 0,但 adjust_total += adj (從房客角度的 outgoing)
+// bills_outstanding(unit) = Σ(paid=1 bills cost − cells paid)
+//   獨立 ledger:房客 cell 還欠的(跟 wallet 解耦,需要可分別查明細)
 //
-// bills_outstanding(unit) = Σ(paid=1 bills cost) − Σ(cells paid)
-//   獨立 ledger,不影響 wallet
-//
-// 為什麼這樣分?
-//   - 新 bill 過帳 不影響 wallet(只進帳單 ledger)
-//   - 房客 結算 付的錢進 wallet(可隨時提款 / 抵其他)
-//   - cell 點已收 改 bills_outstanding,不影響 wallet
-//   - 結算 不會 double-count(received 算 wallet,bills 是另一張帳)
+// 注意:同張 bill 不要結算 2 次(picker 已解耦,user 不重複勾就不會雙算)
 function _computeBalance(unit, beforeDate, excludeSettledAt) {
   var hist = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
   var eraStart = window._showAllHistory ? null : _getCurrentEraStart(unit);
 
-  var cash_in = 0, adjust_total = 0;
+  var bal = 0;
   hist.forEach(function(h) {
     if (h.unit !== unit) return;
     if (excludeSettledAt && h.settledAt === excludeSettledAt) return;
@@ -3904,11 +3897,12 @@ function _computeBalance(unit, beforeDate, excludeSettledAt) {
       if (h.accountDate > beforeDate) return;
       if (h.accountDate === beforeDate && excludeSettledAt && h.settledAt > excludeSettledAt) return;
     }
-    cash_in += parseFloat(h.received) || 0;
-    adjust_total += parseFloat(h.adjust) || 0;
+    var r = parseFloat(h.received) || 0;
+    var d = parseFloat(h.totalPaidDue) || 0;
+    var a = parseFloat(h.adjust) || 0;
+    bal += r - d - a;
   });
-
-  return cash_in - adjust_total;
+  return bal;
 }
 
 // 帳單未收 明細 modal(點 top bar 「📋 帳單未收」打開)
@@ -4474,16 +4468,18 @@ function viewPaymentHistory(unit) {
   if (history.length === 0) {
     content = '<div style="padding:24px;text-align:center;color:#94a3b8;">戶 ' + unit + ' 尚無結算紀錄<br><span style="font-size:10px;">按「💾 結算」會自動存入</span></div>';
   } else {
-    // ★ V3.6 算 running wallet(由舊到新依序累加;只算 received − adjust,bills 不在 wallet)
+    // ★ V3.7:running wallet = Σ(received − totalPaidDue − adjust)
     var running = 0;
-    var totalReceived = 0, totalAdjust = 0;
+    var totalReceived = 0, totalDue = 0, totalAdjust = 0;
     var historyAsc = history.slice().reverse();
     var runningMap = {};
     historyAsc.forEach(function(h) {
       var r = parseFloat(h.received) || 0;
+      var d = parseFloat(h.totalPaidDue) || 0;
       var a = parseFloat(h.adjust) || 0;
-      running += r - a;
+      running += r - d - a;
       totalReceived += r;
+      totalDue += d;
       totalAdjust += a;
       runningMap[h.settledAt] = Math.round(running);
     });
@@ -4549,14 +4545,17 @@ function viewPaymentHistory(unit) {
         + '</div>'
       + '</div>';
     }).join('');
-    // ★ 合計 footer(讓 user 自己兜得起來)
-    var finalBal = Math.round(totalReceived - totalAdjust);
+    // ★ V3.7 合計 footer
+    var finalBal = Math.round(totalReceived - totalDue - totalAdjust);
     var finalColor = finalBal > 0.5 ? '#16a34a' : finalBal < -0.5 ? '#dc2626' : '#475569';
     var finalSign = finalBal > 0.5 ? '+' + finalBal : finalBal < -0.5 ? String(finalBal) : '0';
     content += '<div style="margin-top:10px;padding:10px 12px;background:#1e293b;color:#fff;border-radius:8px;font-size:12px;line-height:1.8;">'
       + '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">💡 加總驗算(' + history.length + ' 筆):</div>'
       + '<div style="display:flex;justify-content:space-between;">'
         + '<span>Σ 實收/預繳(received,signed)</span><span style="color:#16a34a;font-weight:700;">' + Math.round(totalReceived) + '</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;">'
+        + '<span>− Σ 結算 totalPaidDue</span><span style="color:#dc2626;font-weight:700;">' + Math.round(totalDue) + '</span>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;">'
         + '<span>− Σ 調整(adjust)</span><span style="color:#dc2626;font-weight:700;">' + Math.round(totalAdjust) + '</span>'
