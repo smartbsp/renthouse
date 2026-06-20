@@ -3184,8 +3184,8 @@ function renderAccountStatus() {
         + '<span style="font-size:12px;">' + balIcon + ' wallet (' + subText + ')</span>'
         + '<span style="font-size:17px;">' + balText + ' 元</span>'
       + '</div>'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;padding-top:3px;border-top:1px dashed #e2e8f0;font-size:11px;color:#64748b;">'
-        + '<span>📋 帳單未收</span>'
+      + '<div onclick="showOutstandingDetail(\'' + unit + '\')" style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;padding-top:3px;border-top:1px dashed #e2e8f0;font-size:11px;color:#64748b;cursor:pointer;" title="點看明細">'
+        + '<span>📋 帳單未收 <span style="font-size:9px;color:#94a3b8;">(點看明細)</span></span>'
         + '<span style="color:' + (outstanding > 0.5 ? '#dc2626' : '#16a34a') + ';font-weight:700;">' + outstanding + ' 元</span>'
       + '</div>'
       + '<div style="font-size:10px;color:#94a3b8;margin-top:2px;">淨值: ' + (bal - outstanding) + ' 元 <span style="font-size:9px;">(wallet − 未收)</span></div>'
@@ -3915,6 +3915,73 @@ function _computeBalance(unit, beforeDate, excludeSettledAt) {
   });
 
   return cash_in - adjust_total;
+}
+
+// 帳單未收 明細 modal(點 top bar 「📋 帳單未收」打開)
+function showOutstandingDetail(unit) {
+  var ident = UNIT_COLOR[unit];
+  var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  var water = (typeof waterRecords !== 'undefined' && Array.isArray(waterRecords)) ? waterRecords : [];
+  var rows = [];
+  function scan(arr, table, icon, kindLabel, kindColor) {
+    arr.filter(function(r) { return parseInt(r.paid, 10) === 1; }).forEach(function(r) {
+      var cost = unit === 'A' ? (parseFloat(r.costA) || 0) : (parseFloat(r.costB) || 0);
+      var paid = parseFloat(unit === 'A' ? r.paidA : r.paidB);
+      var paidVal = isNaN(paid) ? null : paid;
+      var unpaid = Math.max(0, cost - (paidVal || 0));
+      if (unpaid > 0.5) {
+        rows.push({
+          icon: icon, kind: kindLabel, kindColor: kindColor,
+          billMonth: r.billMonth || '--',
+          cost: cost, paid: paidVal, unpaid: unpaid,
+          table: table, id: r.id
+        });
+      }
+    });
+  }
+  scan(elec, 'electric', '⚡', '電費', KIND_COLOR.electric);
+  scan(water, 'water', '💧', '水費', KIND_COLOR.water);
+  rows.sort(function(a, b) { return (b.billMonth || '').localeCompare(a.billMonth || ''); });
+
+  var totalUnpaid = rows.reduce(function(s, r) { return s + r.unpaid; }, 0);
+
+  var bodyHtml;
+  if (rows.length === 0) {
+    bodyHtml = '<div style="padding:30px;text-align:center;color:#16a34a;font-weight:700;">✓ 戶 ' + unit + ' 所有帳單都已收齊</div>';
+  } else {
+    bodyHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+      + '<thead><tr style="background:#f1f5f9;color:#475569;"><th style="padding:6px;text-align:left;">月份</th><th style="padding:6px;text-align:left;">類型</th><th style="padding:6px;text-align:right;">應收</th><th style="padding:6px;text-align:right;">已收</th><th style="padding:6px;text-align:right;color:#dc2626;">未收</th></tr></thead>'
+      + '<tbody>';
+    rows.forEach(function(r) {
+      bodyHtml += '<tr style="border-top:1px dashed #e2e8f0;">'
+        + '<td style="padding:6px;font-weight:700;">' + r.billMonth + '</td>'
+        + '<td style="padding:6px;color:' + r.kindColor + ';font-weight:700;">' + r.icon + ' ' + r.kind + '</td>'
+        + '<td style="padding:6px;text-align:right;">' + Math.round(r.cost) + '</td>'
+        + '<td style="padding:6px;text-align:right;color:#94a3b8;">' + (r.paid == null ? '−' : Math.round(r.paid)) + '</td>'
+        + '<td style="padding:6px;text-align:right;color:#dc2626;font-weight:700;">' + Math.round(r.unpaid) + '</td>'
+      + '</tr>';
+    });
+    bodyHtml += '<tr style="background:#fef2f2;border-top:2px solid #dc2626;font-weight:700;">'
+      + '<td colspan="4" style="padding:8px;text-align:right;">合計 未收</td>'
+      + '<td style="padding:8px;text-align:right;color:#dc2626;font-size:16px;">' + Math.round(totalUnpaid) + ' 元</td>'
+    + '</tr></tbody></table>';
+  }
+
+  var overlay = document.createElement('div');
+  overlay.id = 'outstandingDetailOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column;border:2px solid ' + ident + ';">'
+    + '<div style="padding:12px 16px;background:' + ident + ';color:#fff;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;">'
+      + '<span style="font-size:14px;font-weight:700;">📋 戶 ' + unit + ' 帳單未收 明細</span>'
+      + '<button onclick="document.getElementById(\'outstandingDetailOverlay\').remove()" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">✕</button>'
+    + '</div>'
+    + '<div style="padding:14px;overflow-y:auto;flex:1;">' + bodyHtml + '</div>'
+    + '<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;text-align:center;">'
+      + '想標記已收 → 到 ⚡電費 / 💧水費 分頁點 cell 切換 已繳/未繳'
+    + '</div>'
+  + '</div>';
+  document.body.appendChild(overlay);
 }
 
 // 帳單未收 ledger(獨立於 wallet)
