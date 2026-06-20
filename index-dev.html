@@ -3514,24 +3514,18 @@ function _bIdsInHistory() {
   return ids;
 }
 
+// V3.6:picker 預設 = 任一戶 cell 還未繳清 的 bill(history dedup 不需要,因 wallet 不會雙算)
 function _defaultUnpaidCheckedIds() {
   var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   var water = waterRecords || [];
-  var aSettled = _bIdsSettledBy('A');
-  var bSettled = _bIdsSettledBy('B');
   var ids = [];
   function scan(arr, table) {
     arr.filter(function(r) { return parseInt(r.paid, 10) === 1; }).forEach(function(r) {
-      var key = table + ':' + String(r.id);
       var dueA = _itemDueA({ table: table, r: r });
       var dueB = _itemDueB({ table: table, r: r });
       var pA = parseFloat(r.paidA) || 0;
       var pB = parseFloat(r.paidB) || 0;
-      // 「該戶還欠 AND 該戶沒 settle 過」→ 該戶要 picker 勾
-      // 兩戶至少一邊 needs → bill 進 picker(這樣同張單 B 戶想結算還勾得到)
-      var aNeeds = (dueA > 0 && pA < dueA - 0.5) && !aSettled[key];
-      var bNeeds = (dueB > 0 && pB < dueB - 0.5) && !bSettled[key];
-      if (aNeeds || bNeeds) {
+      if ((dueA > 0 && pA < dueA - 0.5) || (dueB > 0 && pB < dueB - 0.5)) {
         ids.push({ table: table, id: String(r.id) });
       }
     });
@@ -5661,20 +5655,7 @@ function _renderKindBlock(table, title, items) {
 }
 
 function toggleBalanceBill(table, id, checked) {
-  // 手動勾「已 settle 過」的 bill → confirm 防呆(重複計算 wallet)
-  if (checked) {
-    var inHist = _bIdsInHistory();
-    var who = inHist[table + ':' + String(id)];
-    if (who) {
-      var whoStr = who.A && who.B ? '戶 A + 戶 B' : who.A ? '戶 A' : '戶 B';
-      var kind = table === 'water' ? '💧水費' : '⚡電費';
-      var ok = confirm('⚠️ 該筆 ' + kind + ' 已在「' + whoStr + '」過去結算紀錄裡(wallet 已記過)\n\n若該戶再次結算,會「雙重計算」進本期應繳。\n\n(其他戶結算則不受影響)\n\n通常只有「分期收款」才會這樣做。確認勾起?');
-      if (!ok) {
-        renderSummary();
-        return;
-      }
-    }
-  }
+  // V3.6 雙 ledger 後不需要防呆 confirm(picker 不影響 wallet,不會雙重算)
   var ids = [];
   try { ids = JSON.parse(localStorage.getItem('renthouseBalanceCheckedIds') || '[]') || []; } catch(e) {}
   if (!Array.isArray(ids)) ids = [];
@@ -5798,7 +5779,6 @@ function _renderBalanceCheck() {
     return '<span style="color:#dc2626;font-weight:700;">' + label + ' ' + collect.toFixed(0) + '</span>';
   }
   var visibleBills = allBills;
-  var billsInHist = _bIdsInHistory();
   var billRowsHtml = visibleBills.map(function(b) {
     var a = _itemDueA({ table: b.table, r: b.r });
     var bs = _itemDueB({ table: b.table, r: b.r });
@@ -5812,15 +5792,9 @@ function _renderBalanceCheck() {
     if (bTxt) parts.push(bTxt);
     var oweText = parts.join(' / ');
     var checked = isChecked(b.table, b.r.id);
-    var inHist = billsInHist[b.table + ':' + String(b.r.id)];
-    var histBadge = '';
-    if (inHist) {
-      var whoStr = inHist.A && inHist.B ? 'A+B' : inHist.A ? 'A' : 'B';
-      histBadge = ' <span style="background:#fef3c7;color:#92400e;font-size:9px;padding:1px 4px;border-radius:3px;" title="戶 ' + whoStr + ' 已在過去結算紀錄,該戶若再勾會雙重計算">⚠️' + whoStr + '已</span>';
-    }
     return '<label style="display:grid;grid-template-columns:24px 1fr 70px 130px;gap:6px;align-items:center;padding:5px 6px;border-bottom:1px dashed #e2e8f0;cursor:pointer;background:' + (checked ? '#fefce8' : 'transparent') + ';">'
       + '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleBalanceBill(\'' + b.table + '\',\'' + b.r.id + '\',this.checked)" style="width:16px;height:16px;accent-color:' + b.kindColor + ';">'
-      + '<span style="font-size:12px;"><span style="color:' + b.kindColor + ';font-weight:700;">' + b.icon + ' ' + b.kind + '</span> ' + (b.r.billMonth || '--') + histBadge + '</span>'
+      + '<span style="font-size:12px;"><span style="color:' + b.kindColor + ';font-weight:700;">' + b.icon + ' ' + b.kind + '</span> ' + (b.r.billMonth || '--') + '</span>'
       + '<span style="text-align:right;font-weight:700;font-size:13px;">' + t.toFixed(0) + '</span>'
       + '<span style="text-align:right;font-size:11px;">' + oweText + '</span>'
     + '</label>';
