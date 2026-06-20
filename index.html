@@ -3594,17 +3594,15 @@ function _unitAccount(unit) {
   // 繳款日期(房客匯款日,空白允許)
   var payDateKey = 'renthousePayDate' + unit;
   var payDateVal = localStorage.getItem(payDateKey) || '';
-  // ★ V3.5 新模型:wallet 已內含所有 bill_total,sumDue 是「informational」,不再扣 wallet ★
-  //  balanceBefore = wallet (含全部 bills 已扣)
-  //  結算後預繳   = balanceBefore + received − adjust   (新 received/adjust 進 wallet)
-  //  picker sumDue 只是本期單據合計顯示用,wallet 已自動扣
-  //  本期應繳金額 = sumDue + adjust  (informational,告訴房客本期單據總值)
+  // ★ V3.7 模型:
+  //  balanceBefore = wallet 目前(從 history 算)
+  //  結算後預繳   = balanceBefore + received − sumDue − adjust  (cover 本期 bill 後的剩餘)
+  //  本期應繳金額 = sumDue + adjust(本期 collect 加調整)
   //  本期實際應付建議 = max(0, sumDue + adjust − max(0, balanceBefore))
-  //                  (本期單據總值 − 可用預繳餘額)
   var balanceBefore = Math.round(_computeBalance(unit, dateVal));
-  var dueThis = sumDue + adjustVal;  // 本期單據+調整 (informational)
-  var balanceAfter = balanceBefore + paidVal - adjustVal;  // ★ 不再扣 sumDue,因 wallet 已含
-  var diff = paidVal - adjustVal;  // legacy 變數;rolloverPeriod 用
+  var dueThis = sumDue + adjustVal;
+  var balanceAfter = balanceBefore + paidVal - sumDue - adjustVal;  // ★ V3.7: 扣 sumDue
+  var diff = paidVal - sumDue - adjustVal;
 
   var ident = UNIT_COLOR[unit];
   var bg = unit === 'A' ? '#eff6ff' : '#f0fdf4';
@@ -3792,8 +3790,23 @@ function _liveUpdateBalanceRow(unit) {
     labelEl.innerHTML = label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(到 wallet 歸 0)</span>';
   }
 
-  // 結算後預繳 = balBefore + paid − adj
-  var balAfter = Math.round(balBefore + paid - adj);
+  // ★ V3.7 結算後預繳 = balBefore + paid − sumDue − adj
+  // sumDue 先算(picker collect)
+  var picker = [];
+  try { picker = JSON.parse(localStorage.getItem('renthouseBalanceCheckedIds') || '[]'); } catch(e) {}
+  var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  var water = (typeof waterRecords !== 'undefined' && Array.isArray(waterRecords)) ? waterRecords : [];
+  var sumDue = 0;
+  (picker || []).forEach(function(p) {
+    var arr = p.table === 'electric' ? elec : water;
+    var r = arr.find(function(x) { return String(x.id) === String(p.id); });
+    if (!r) return;
+    var due = unit === 'A' ? (parseFloat(r.costA) || 0) : (parseFloat(r.costB) || 0);
+    var paidCell = parseFloat(unit === 'A' ? r.paidA : r.paidB) || 0;
+    sumDue += Math.max(0, due - paidCell);
+  });
+
+  var balAfter = Math.round(balBefore + paid - sumDue - adj);
   var balAfterEl = document.getElementById('balAfter' + unit);
   if (balAfterEl) {
     var balColor = balAfter > 0.5 ? '#16a34a' : balAfter < -0.5 ? '#dc2626' : '#475569';
@@ -3806,21 +3819,6 @@ function _liveUpdateBalanceRow(unit) {
   var panel = document.getElementById('balanceCheckPanel' + unit);
   var statusEl = document.getElementById('balanceCheckStatus' + unit);
   if (panel && statusEl) {
-    // sumDue 從 picker 即時算太貴,從 row 內讀(因 sumDue 是 picker-dependent,picker 沒變)
-    // 重算 debit / credit
-    var picker = [];
-    try { picker = JSON.parse(localStorage.getItem('renthouseBalanceCheckedIds') || '[]'); } catch(e) {}
-    var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
-    var water = (typeof waterRecords !== 'undefined' && Array.isArray(waterRecords)) ? waterRecords : [];
-    var sumDue = 0;
-    (picker || []).forEach(function(p) {
-      var arr = p.table === 'electric' ? elec : water;
-      var r = arr.find(function(x) { return String(x.id) === String(p.id); });
-      if (!r) return;
-      var due = unit === 'A' ? (parseFloat(r.costA) || 0) : (parseFloat(r.costB) || 0);
-      var paidCell = parseFloat(unit === 'A' ? r.paidA : r.paidB) || 0;
-      sumDue += Math.max(0, due - paidCell);
-    });
     var debit = sumDue + adj;
     var credit = paid;  // 不含預繳
     var diff = debit - credit;
