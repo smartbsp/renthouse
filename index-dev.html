@@ -1953,10 +1953,34 @@ async function initApp() {
   Promise.all([
     fetch(API + '?action=list').then(r => r.json()).catch(() => null),
     fetch(API + '?action=tenant_list').then(r => r.json()).catch(() => null),
-    fetch(API + '?action=draft_load').then(r => r.json()).catch(() => null)
+    fetch(API + '?action=draft_load').then(r => r.json()).catch(() => null),
+    fetch(API + '?action=wallet_list').then(r => r.json()).catch(() => null)
   ]).then(function(results) {
-    var apiData = results[0], tData = results[1], dData = results[2];
-    var changed = { records: false, tenants: false };
+    var apiData = results[0], tData = results[1], dData = results[2], walletData = results[3];
+    var changed = { records: false, tenants: false, wallet: false };
+
+    // wallet history sync(SWR: 空 DB + 本地有 → 一次性 migrate;否則 DB 為主)
+    if (Array.isArray(walletData)) {
+      var oldW = localStorage.getItem('renthousePaymentHistory') || '[]';
+      var localWallet = [];
+      try { localWallet = JSON.parse(oldW); } catch(e) {}
+      if (walletData.length === 0 && localWallet.length > 0) {
+        // Migration:首次,本地有資料 DB 空 → bulk push
+        console.log('[wallet] migrating ' + localWallet.length + ' records → DB');
+        fetch(API + '?action=wallet_bulk_import', {
+          method: 'POST',
+          body: JSON.stringify({ records: localWallet })
+        }).then(r => r.json()).then(j => {
+          showToast('🔄 wallet 歷史 ' + (j.imported || 0) + ' 筆已同步到 DB');
+        }).catch(function() { showToast('⚠️ wallet 同步 DB 失敗(本地仍 OK)'); });
+      } else {
+        var newW = JSON.stringify(walletData);
+        if (newW !== oldW) {
+          localStorage.setItem('renthousePaymentHistory', newW);
+          changed.wallet = true;
+        }
+      }
+    }
 
     if (Array.isArray(apiData)) {
       var oldStr = localStorage.getItem('renthouseRecords') || '[]';
@@ -1996,8 +2020,12 @@ async function initApp() {
       applyWaterMode();
       renderWaterHistory();
     }
+    if (changed.wallet) {
+      if (typeof renderAccountStatus === 'function') renderAccountStatus();
+      if (typeof renderSummary === 'function') renderSummary();
+    }
     var ms = Date.now() - t0;
-    if (typeof showToast === 'function' && (changed.records || changed.tenants)) {
+    if (typeof showToast === 'function' && (changed.records || changed.tenants || changed.wallet)) {
       showToast('🔄 NAS 同步完成 (' + ms + 'ms)');
     }
   });
@@ -3137,11 +3165,12 @@ function renderAccountStatus() {
   if (!bar) return;
   function card(unit, label, color) {
     var bal = Math.round(_computeBalance(unit));
+    var outstanding = Math.round(_computeBillsOutstanding(unit));
     var balText, balColor, balIcon;
-    if (bal > 0.5)        { balText = '+' + bal + ' 元'; balColor = '#16a34a'; balIcon = '💰'; }
-    else if (bal < -0.5)  { balText = bal + ' 元';      balColor = '#dc2626'; balIcon = '⚠️'; }
-    else                  { balText = '0 元';           balColor = '#475569'; balIcon = '✓'; }
-    var subText = bal > 0.5 ? '預繳餘額(可扣)' : bal < -0.5 ? '缺繳(待補)' : '結清';
+    if (bal > 0.5)        { balText = '+' + bal; balColor = '#16a34a'; balIcon = '💰'; }
+    else if (bal < -0.5)  { balText = String(bal);  balColor = '#dc2626'; balIcon = '⚠️'; }
+    else                  { balText = '0';       balColor = '#475569'; balIcon = '✓'; }
+    var subText = bal > 0.5 ? '預繳' : bal < -0.5 ? '缺繳' : '結清';
     return '<div style="flex:1;background:#fff;border:2px solid ' + color + ';border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4;">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:4px;">'
         + '<span style="font-weight:700;color:' + color + ';font-size:12px;">' + label + ' 預繳帳戶</span>'
@@ -3152,9 +3181,14 @@ function renderAccountStatus() {
         + '</span>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;font-weight:700;color:' + balColor + ';">'
-        + '<span style="font-size:13px;">' + balIcon + ' ' + subText + '</span>'
-        + '<span style="font-size:17px;">' + balText + '</span>'
+        + '<span style="font-size:12px;">' + balIcon + ' wallet (' + subText + ')</span>'
+        + '<span style="font-size:17px;">' + balText + ' 元</span>'
       + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;padding-top:3px;border-top:1px dashed #e2e8f0;font-size:11px;color:#64748b;">'
+        + '<span>📋 帳單未收</span>'
+        + '<span style="color:' + (outstanding > 0.5 ? '#dc2626' : '#16a34a') + ';font-weight:700;">' + outstanding + ' 元</span>'
+      + '</div>'
+      + '<div style="font-size:10px;color:#94a3b8;margin-top:2px;">淨值: ' + (bal - outstanding) + ' 元 <span style="font-size:9px;">(wallet − 未收)</span></div>'
     + '</div>';
   }
   bar.innerHTML = '<div style="display:flex;gap:8px;">'
@@ -3242,6 +3276,7 @@ function _saveWalletTxn(unit, type) {
     note: note
   });
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+  _walletSyncSave(history[history.length - 1]);  // → DB
   showToast((isPrepay ? '💰 預繳 +' : '💸 提款 −') + amount + ' 已存入戶 ' + unit);
 
   var ov = document.getElementById('walletTxnOverlay');
@@ -3424,17 +3459,79 @@ function _makeSummaryRow(it) {
 }
 
 // 預設「未繳清」picker:已過帳(paid=1)且任一戶未付清(paidA<dueA 或 paidB<dueB,partial 也算)
+// === Wallet DB persistence helpers ===
+// 任何 wallet mutation 都呼叫這兩個,確保 DB 同步
+function _walletSyncSave(record) {
+  if (typeof isNAS === 'undefined' || !isNAS) return;
+  fetch(API + '?action=wallet_upsert', {
+    method: 'POST',
+    body: JSON.stringify(record)
+  }).catch(function() {
+    showToast('⚠️ wallet 紀錄寫 DB 失敗(本地已存)');
+  });
+}
+function _walletSyncDelete(settledAt) {
+  if (typeof isNAS === 'undefined' || !isNAS) return;
+  fetch(API + '?action=wallet_delete', {
+    method: 'POST',
+    body: JSON.stringify({ settledAt: settledAt })
+  }).catch(function() {
+    showToast('⚠️ wallet 刪除寫 DB 失敗(本地已刪)');
+  });
+}
+
+// 該 unit 的 history 中,pickerSelection 出現過的 bill ids
+function _bIdsSettledBy(unit) {
+  var hist = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+  var ids = {};
+  hist.forEach(function(h) {
+    if (h.unit !== unit) return;
+    if (Array.isArray(h.pickerSelection)) {
+      h.pickerSelection.forEach(function(p) {
+        if (p && p.id) ids[(p.table || '') + ':' + String(p.id)] = true;
+      });
+    }
+  });
+  return ids;
+}
+
+// 任一戶 settle 過(union)— picker UI badge 用,顯示「A/B 哪戶已過」
+function _bIdsInHistory() {
+  var hist = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+  var ids = {};
+  hist.forEach(function(h) {
+    if (Array.isArray(h.pickerSelection)) {
+      h.pickerSelection.forEach(function(p) {
+        if (p && p.id) {
+          var key = (p.table || '') + ':' + String(p.id);
+          if (!ids[key]) ids[key] = { A: false, B: false };
+          if (h.unit === 'A') ids[key].A = true;
+          if (h.unit === 'B') ids[key].B = true;
+        }
+      });
+    }
+  });
+  return ids;
+}
+
 function _defaultUnpaidCheckedIds() {
   var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
   var water = waterRecords || [];
+  var aSettled = _bIdsSettledBy('A');
+  var bSettled = _bIdsSettledBy('B');
   var ids = [];
   function scan(arr, table) {
     arr.filter(function(r) { return parseInt(r.paid, 10) === 1; }).forEach(function(r) {
+      var key = table + ':' + String(r.id);
       var dueA = _itemDueA({ table: table, r: r });
       var dueB = _itemDueB({ table: table, r: r });
       var pA = parseFloat(r.paidA) || 0;
       var pB = parseFloat(r.paidB) || 0;
-      if ((dueA > 0 && pA < dueA - 0.5) || (dueB > 0 && pB < dueB - 0.5)) {
+      // 「該戶還欠 AND 該戶沒 settle 過」→ 該戶要 picker 勾
+      // 兩戶至少一邊 needs → bill 進 picker(這樣同張單 B 戶想結算還勾得到)
+      var aNeeds = (dueA > 0 && pA < dueA - 0.5) && !aSettled[key];
+      var bNeeds = (dueB > 0 && pB < dueB - 0.5) && !bSettled[key];
+      if (aNeeds || bNeeds) {
         ids.push({ table: table, id: String(r.id) });
       }
     });
@@ -3503,14 +3600,17 @@ function _unitAccount(unit) {
   // 繳款日期(房客匯款日,空白允許)
   var payDateKey = 'renthousePayDate' + unit;
   var payDateVal = localStorage.getItem(payDateKey) || '';
-  // 預繳餘額模型:
-  //  本期應繳金額 = 應繳款 + 調整(adjust>0 補繳要多付)
-  //  結算後預繳   = 預繳餘額(結算前) + 實收 − 本期應繳金額
-  //              = balanceBefore + received − sumDue − adjust
+  // ★ V3.5 新模型:wallet 已內含所有 bill_total,sumDue 是「informational」,不再扣 wallet ★
+  //  balanceBefore = wallet (含全部 bills 已扣)
+  //  結算後預繳   = balanceBefore + received − adjust   (新 received/adjust 進 wallet)
+  //  picker sumDue 只是本期單據合計顯示用,wallet 已自動扣
+  //  本期應繳金額 = sumDue + adjust  (informational,告訴房客本期單據總值)
+  //  本期實際應付建議 = max(0, sumDue + adjust − max(0, balanceBefore))
+  //                  (本期單據總值 − 可用預繳餘額)
   var balanceBefore = Math.round(_computeBalance(unit, dateVal));
-  var dueThis = sumDue + adjustVal;
-  var balanceAfter = balanceBefore + paidVal - dueThis;
-  var diff = paidVal - dueThis;  // legacy 變數,給 rolloverPeriod 用
+  var dueThis = sumDue + adjustVal;  // 本期單據+調整 (informational)
+  var balanceAfter = balanceBefore + paidVal - adjustVal;  // ★ 不再扣 sumDue,因 wallet 已含
+  var diff = paidVal - adjustVal;  // legacy 變數;rolloverPeriod 用
 
   var ident = UNIT_COLOR[unit];
   var bg = unit === 'A' ? '#eff6ff' : '#f0fdf4';
@@ -3603,13 +3703,15 @@ function _unitAccount(unit) {
         }
         return '';
       })()
-    // 本期實際應付(房客真的要付的)
+    // ★ V3.5: 還需付 = max(0, adjust - balanceBefore - 實收) — 即時反映實收輸入
+    //   (=要讓 wallet 歸 0 還缺多少)
     + (function() {
-        var actual = Math.round(dueThis - balanceBefore);  // balance>0 → 減,balance<0 → 加
-        if (actual < 0) actual = 0;  // 預繳超過應繳,actual 為 0(剩餘預繳由 result 算)
+        var remaining = Math.max(0, Math.round(adjustVal - balanceBefore - paidVal));
+        var label = remaining > 0 ? '還需付' : '✓ 結清(可儲存)';
+        var color = remaining > 0 ? ident : '#16a34a';
         return '<div style="display:flex;justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;border-radius:4px;">'
-          + '<span style="font-weight:700;font-size:16px;">本期實際應付</span>'
-          + '<span style="color:' + ident + ';font-size:28px;font-weight:800;">' + actual + '</span>'
+          + '<span style="font-weight:700;font-size:16px;">' + label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(到 wallet 歸 0)</span></span>'
+          + '<span style="color:' + color + ';font-size:28px;font-weight:800;">' + remaining + '</span>'
         + '</div>';
       })()
     + '</div>'  // ╚══ 房客面 ══╝
@@ -3676,30 +3778,61 @@ function _getCurrentEraStart(unit) {
   return latestSa;
 }
 
-// 預繳餘額(wallet)= Σ(received − totalPaidDue − adjust) for unit's history
-// 預設只算「當前 era」(換約之後);設 window._showAllHistory=true 看全部
+// ★ V3.6 模型(純 cash flow,bill 獨立 ledger)★
 //
-// 同日按時間排序(支援同日多次 💾):
-//   - 無 beforeDate            → 全部 records (top bar)
-//   - 有 beforeDate            → accountDate <= beforeDate 都含
-//   - 有 excludeSettledAt      → 同日的 record,settledAt 早於 excludeSettledAt 才計入
+// wallet(unit) = Σ history 的 received(signed) − Σ history 的 adjust
+//             ≡ 房客在你這的「現金存款」
+//
+//   預繳 +X            → cash_in += X
+//   提款 −X            → cash_in -= X (history.received 已是 -X)
+//   結清 退款          → 同提款 (received 已 signed)
+//   結清 補繳          → 同預繳
+//   結算 received      → cash_in += received(房客交給房東的錢)
+//   結算 adjust > 0 (補) → cash_in 影響 = 0,但 adjust_total += adj (從房客角度的 outgoing)
+//
+// bills_outstanding(unit) = Σ(paid=1 bills cost) − Σ(cells paid)
+//   獨立 ledger,不影響 wallet
+//
+// 為什麼這樣分?
+//   - 新 bill 過帳 不影響 wallet(只進帳單 ledger)
+//   - 房客 結算 付的錢進 wallet(可隨時提款 / 抵其他)
+//   - cell 點已收 改 bills_outstanding,不影響 wallet
+//   - 結算 不會 double-count(received 算 wallet,bills 是另一張帳)
 function _computeBalance(unit, beforeDate, excludeSettledAt) {
   var hist = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
   var eraStart = window._showAllHistory ? null : _getCurrentEraStart(unit);
-  return hist.reduce(function(s, h) {
-    if (h.unit !== unit) return s;
-    if (excludeSettledAt && h.settledAt === excludeSettledAt) return s;
-    // era filter:換約之前 (含換約本身) 排除(已歸 0,不要重複算)
-    if (eraStart && (h.settledAt || '') <= eraStart) return s;
+
+  var cash_in = 0, adjust_total = 0;
+  hist.forEach(function(h) {
+    if (h.unit !== unit) return;
+    if (excludeSettledAt && h.settledAt === excludeSettledAt) return;
+    if (eraStart && (h.settledAt || '') <= eraStart) return;
     if (beforeDate && h.accountDate) {
-      if (h.accountDate > beforeDate) return s;
-      if (h.accountDate === beforeDate && excludeSettledAt && h.settledAt > excludeSettledAt) return s;
+      if (h.accountDate > beforeDate) return;
+      if (h.accountDate === beforeDate && excludeSettledAt && h.settledAt > excludeSettledAt) return;
     }
-    var r = parseFloat(h.received) || 0;
-    var a = parseFloat(h.adjust) || 0;
-    var d = parseFloat(h.totalPaidDue) || 0;
-    return s + r - d - a;
-  }, 0);
+    cash_in += parseFloat(h.received) || 0;
+    adjust_total += parseFloat(h.adjust) || 0;
+  });
+
+  return cash_in - adjust_total;
+}
+
+// 帳單未收 ledger(獨立於 wallet)
+function _computeBillsOutstanding(unit) {
+  var elec = JSON.parse(localStorage.getItem('renthouseRecords') || '[]');
+  var water = (typeof waterRecords !== 'undefined' && Array.isArray(waterRecords)) ? waterRecords : JSON.parse(localStorage.getItem('renthouseWaterRecords') || '[]');
+  var total = 0;
+  function addBills(arr) {
+    arr.filter(function(r) { return parseInt(r.paid, 10) === 1; }).forEach(function(r) {
+      var cost = unit === 'A' ? (parseFloat(r.costA) || 0) : (parseFloat(r.costB) || 0);
+      var paid = parseFloat(unit === 'A' ? r.paidA : r.paidB) || 0;
+      total += Math.max(0, cost - paid);
+    });
+  }
+  addBills(elec);
+  addBills(water);
+  return total;
 }
 
 window._showAllHistory = false;
@@ -3846,6 +3979,9 @@ function rolloverPeriod(unit) {
     msg = '✅ 戶 ' + unit + ' ' + accountDate + ' 已新增 (' + label + ')';
   }
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+  // 同步 DB(找剛 push/update 的 record)
+  var savedRec = (existingIdx >= 0) ? history[existingIdx] : history[history.length - 1];
+  _walletSyncSave(savedRec);
 
   // 自動分配實收到 picker:大筆優先付清,剩餘額度落到小筆變 partial(未繳清)
   // 例:實收 2000,picker 電 1953 + 水 292 → 電 1953 全付 + 水 47 partial(還欠 245)
@@ -4030,12 +4166,12 @@ function printInvoice(unit) {
   var balanceBefore = Math.round(_computeBalance(unit, dateVal));
   var adjustVal = parseFloat(localStorage.getItem('renthouseAdjust' + unit) || '0') || 0;
   var paidVal = parseFloat(localStorage.getItem('renthouseReceivedThis' + unit) || '0') || 0;
-  var dueThis = sumDue + adjustVal;  // 本期應繳金額(gross,未折抵)
-  var actualPay = Math.max(0, dueThis - balanceBefore);  // 實際應付(扣完預繳)
+  var dueThis = sumDue + adjustVal;
+  // ★ V3.5: wallet 已含全部 bill,結清需付 = adjust − balanceBefore (使 wallet 歸 0)
+  var actualPay = Math.max(0, adjustVal - balanceBefore);
   var payDateVal = localStorage.getItem('renthousePayDate' + unit) || '';
-  // legacy prevVal for compat with old html template
   var prevVal = 0;
-  var diff = paidVal - dueThis;
+  var diff = paidVal - adjustVal;
 
   var itemRows = entries.map(function(x) {
     var kc = x.type === '電費' ? KIND_COLOR.electric : KIND_COLOR.water;
@@ -4300,6 +4436,7 @@ function deletePaymentHistory(settledAt, unit) {
     var history = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
     var newHist = history.filter(function(h) { return h.settledAt !== settledAt; });
     localStorage.setItem('renthousePaymentHistory', JSON.stringify(newHist));
+    _walletSyncDelete(settledAt);  // → DB
     showToast('🗑️ 已刪除 · 預繳餘額已重算');
     var ov = document.getElementById('paymentHistoryOverlay');
     if (ov) ov.remove();
@@ -4321,6 +4458,7 @@ function updatePaymentHistoryField(settledAt, field, val, asString) {
   history[idx][field] = asString ? String(val) : Math.round(parseFloat(val) || 0);
   history[idx].updatedAt = new Date().toISOString();
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+  _walletSyncSave(history[idx]);  // → DB
   showToast('✓ 已更新');
   // 主卡 上期 / 本期 連動歷史 → 重 render
   renderSummary();
@@ -4573,8 +4711,9 @@ function _editHistRefresh() {
   var received = parseFloat((document.getElementById('ehReceived') || {}).value || '0') || 0;
   var adjust = parseFloat((document.getElementById('ehAdjust') || {}).value || '0') || 0;
   var balBefore = accountDate ? ctx.calcBalanceBefore(accountDate) : 0;
-  var dueThis = ctx.sumDue + adjust;
-  var balAfter = balBefore + received - dueThis;
+  var dueThis = ctx.sumDue + adjust;  // informational
+  // ★ V3.5: wallet 已含 bill,balanceAfter 只算 received/adjust
+  var balAfter = balBefore + received - adjust;
   var bbEl = document.getElementById('ehBalBefore');
   var dueEl = document.getElementById('ehDueThis');
   var baEl = document.getElementById('ehBalAfter');
@@ -4609,6 +4748,7 @@ function _saveEditedHistory(settledAt, unit) {
     updatedAt: new Date().toISOString()
   });
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+  _walletSyncSave(history[idx]);  // → DB
   showToast('✓ 戶 ' + unit + ' ' + accountDate + ' 已更新 (' + (carryOut > 0.5 ? '預繳 +' + carryOut : carryOut < -0.5 ? '缺繳 ' + Math.abs(carryOut) : '結清') + ')');
 
   // 關 edit modal,重開歷史 overlay,refresh 主畫面 + balance bar
@@ -4945,6 +5085,7 @@ function _saveCloseAccount(unit) {
     note: note
   });
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+  _walletSyncSave(history[history.length - 1]);  // → DB
 
   var newBal = Math.round(_computeBalance(unit));
   showToast('📁 戶 ' + unit + ' ' + caType + ' 已結清 · balance: ' + newBal);
@@ -5031,6 +5172,7 @@ function _saveEditedWalletTxn(settledAt, unit) {
     updatedAt: new Date().toISOString()
   });
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+  _walletSyncSave(history[idx]);  // → DB
   showToast('✓ 戶 ' + unit + ' ' + (isClose ? '結清' : isPrepay ? '預繳' : '提款') + ' 已更新');
 
   renderAccountStatus();
@@ -5299,6 +5441,20 @@ function _renderKindBlock(table, title, items) {
 }
 
 function toggleBalanceBill(table, id, checked) {
+  // 手動勾「已 settle 過」的 bill → confirm 防呆(重複計算 wallet)
+  if (checked) {
+    var inHist = _bIdsInHistory();
+    var who = inHist[table + ':' + String(id)];
+    if (who) {
+      var whoStr = who.A && who.B ? '戶 A + 戶 B' : who.A ? '戶 A' : '戶 B';
+      var kind = table === 'water' ? '💧水費' : '⚡電費';
+      var ok = confirm('⚠️ 該筆 ' + kind + ' 已在「' + whoStr + '」過去結算紀錄裡(wallet 已記過)\n\n若該戶再次結算,會「雙重計算」進本期應繳。\n\n(其他戶結算則不受影響)\n\n通常只有「分期收款」才會這樣做。確認勾起?');
+      if (!ok) {
+        renderSummary();
+        return;
+      }
+    }
+  }
   var ids = [];
   try { ids = JSON.parse(localStorage.getItem('renthouseBalanceCheckedIds') || '[]') || []; } catch(e) {}
   if (!Array.isArray(ids)) ids = [];
@@ -5388,12 +5544,12 @@ function _renderBalanceCheck() {
   var paidA = parseFloat(localStorage.getItem('renthouseReceivedThisA') || '0') || 0;
   var paidB = parseFloat(localStorage.getItem('renthouseReceivedThisB') || '0') || 0;
 
-  // 本期應繳 = 應收 + 調整
-  var actualA = dueA + adjA;
+  // ★ V3.5 新模型:wallet 已含全部 bill_total,本期應繳是 informational
+  var actualA = dueA + adjA;  // 本期單據+調整 (informational)
   var actualB = dueB + adjB;
-  // 結算後預繳 = 預繳餘額(前) + 實收 − 本期應繳
-  var balAfterA = balBeforeA + paidA - actualA;
-  var balAfterB = balBeforeB + paidB - actualB;
+  // 結算後預繳 = wallet(前) + received − adjust(不再扣 due,因 wallet 已含)
+  var balAfterA = balBeforeA + paidA - adjA;
+  var balAfterB = balBeforeB + paidB - adjB;
 
   var splitOk = Math.abs((dueA_gross + dueB_gross) - billSum) < 1;
   var allOk = splitOk;
@@ -5422,6 +5578,7 @@ function _renderBalanceCheck() {
     return '<span style="color:#dc2626;font-weight:700;">' + label + ' ' + collect.toFixed(0) + '</span>';
   }
   var visibleBills = allBills;
+  var billsInHist = _bIdsInHistory();
   var billRowsHtml = visibleBills.map(function(b) {
     var a = _itemDueA({ table: b.table, r: b.r });
     var bs = _itemDueB({ table: b.table, r: b.r });
@@ -5435,9 +5592,15 @@ function _renderBalanceCheck() {
     if (bTxt) parts.push(bTxt);
     var oweText = parts.join(' / ');
     var checked = isChecked(b.table, b.r.id);
+    var inHist = billsInHist[b.table + ':' + String(b.r.id)];
+    var histBadge = '';
+    if (inHist) {
+      var whoStr = inHist.A && inHist.B ? 'A+B' : inHist.A ? 'A' : 'B';
+      histBadge = ' <span style="background:#fef3c7;color:#92400e;font-size:9px;padding:1px 4px;border-radius:3px;" title="戶 ' + whoStr + ' 已在過去結算紀錄,該戶若再勾會雙重計算">⚠️' + whoStr + '已</span>';
+    }
     return '<label style="display:grid;grid-template-columns:24px 1fr 70px 130px;gap:6px;align-items:center;padding:5px 6px;border-bottom:1px dashed #e2e8f0;cursor:pointer;background:' + (checked ? '#fefce8' : 'transparent') + ';">'
       + '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleBalanceBill(\'' + b.table + '\',\'' + b.r.id + '\',this.checked)" style="width:16px;height:16px;accent-color:' + b.kindColor + ';">'
-      + '<span style="font-size:12px;"><span style="color:' + b.kindColor + ';font-weight:700;">' + b.icon + ' ' + b.kind + '</span> ' + (b.r.billMonth || '--') + '</span>'
+      + '<span style="font-size:12px;"><span style="color:' + b.kindColor + ';font-weight:700;">' + b.icon + ' ' + b.kind + '</span> ' + (b.r.billMonth || '--') + histBadge + '</span>'
       + '<span style="text-align:right;font-weight:700;font-size:13px;">' + t.toFixed(0) + '</span>'
       + '<span style="text-align:right;font-size:11px;">' + oweText + '</span>'
     + '</label>';

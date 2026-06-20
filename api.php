@@ -245,6 +245,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     echo json_encode($rows, JSON_UNESCAPED_UNICODE);
     exit;
   }
+
+  // wallet history(預繳/提款/結清/結算)— GET list
+  if ($action === 'wallet_list') {
+    $result = $mysqli->query('SELECT * FROM renthouse_payment_history ORDER BY accountDate DESC, settledAt DESC');
+    $rows = [];
+    while ($row = $result->fetch_assoc()) {
+      // numeric fields
+      foreach (['received','adjust','totalPaidDue','carryIn','carryOut'] as $f) {
+        if (isset($row[$f]) && $row[$f] !== null) $row[$f] = (float)$row[$f];
+      }
+      // JSON fields decode
+      foreach (['paidItems','pickerSelection'] as $f) {
+        if (!empty($row[$f])) {
+          $decoded = json_decode($row[$f], true);
+          if ($decoded !== null) $row[$f] = $decoded;
+        } else {
+          $row[$f] = [];
+        }
+      }
+      $rows[] = $row;
+    }
+    echo json_encode($rows, JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+}
+
+// POST endpoints for wallet
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  if ($action === 'wallet_upsert') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    if (!$body || empty($body['settledAt']) || empty($body['unit'])) {
+      http_response_code(400);
+      echo '{"error":"settledAt and unit required"}';
+      exit;
+    }
+    $stmt = $mysqli->prepare(
+      'INSERT INTO renthouse_payment_history
+        (settledAt, unit, type, accountDate, payDate, received, adjust, totalPaidDue, carryIn, carryOut, closeType, closeAction, paidItems, pickerSelection, note, updatedAt)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE
+        unit=VALUES(unit), type=VALUES(type), accountDate=VALUES(accountDate), payDate=VALUES(payDate),
+        received=VALUES(received), adjust=VALUES(adjust), totalPaidDue=VALUES(totalPaidDue),
+        carryIn=VALUES(carryIn), carryOut=VALUES(carryOut), closeType=VALUES(closeType), closeAction=VALUES(closeAction),
+        paidItems=VALUES(paidItems), pickerSelection=VALUES(pickerSelection), note=VALUES(note), updatedAt=VALUES(updatedAt)');
+    $settledAt = $body['settledAt'];
+    $unit = $body['unit'];
+    $type = $body['type'] ?? 'settle';
+    $accountDate = $body['accountDate'] ?? '';
+    $payDate = $body['payDate'] ?? '';
+    $received = (float)($body['received'] ?? 0);
+    $adjust = (float)($body['adjust'] ?? 0);
+    $totalPaidDue = (float)($body['totalPaidDue'] ?? 0);
+    $carryIn = (float)($body['carryIn'] ?? 0);
+    $carryOut = (float)($body['carryOut'] ?? 0);
+    $closeType = $body['closeType'] ?? null;
+    $closeAction = $body['closeAction'] ?? null;
+    $paidItems = isset($body['paidItems']) ? json_encode($body['paidItems'], JSON_UNESCAPED_UNICODE) : '[]';
+    $pickerSelection = isset($body['pickerSelection']) ? json_encode($body['pickerSelection'], JSON_UNESCAPED_UNICODE) : '[]';
+    $note = $body['note'] ?? '';
+    $updatedAt = $body['updatedAt'] ?? date('c');
+    $stmt->bind_param('sssssddddddssssss',
+      $settledAt, $unit, $type, $accountDate, $payDate,
+      $received, $adjust, $totalPaidDue, $carryIn, $carryOut,
+      $closeType, $closeAction, $paidItems, $pickerSelection, $note, $updatedAt);
+    $ok = $stmt->execute();
+    echo json_encode(['ok' => $ok, 'settledAt' => $settledAt]);
+    exit;
+  }
+
+  if ($action === 'wallet_delete') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    if (!$body || empty($body['settledAt'])) {
+      http_response_code(400);
+      echo '{"error":"settledAt required"}';
+      exit;
+    }
+    $stmt = $mysqli->prepare('DELETE FROM renthouse_payment_history WHERE settledAt=?');
+    $sa = $body['settledAt'];
+    $stmt->bind_param('s', $sa);
+    $ok = $stmt->execute();
+    echo json_encode(['ok' => $ok, 'deleted' => $stmt->affected_rows]);
+    exit;
+  }
+
+  // 批次匯入(localStorage → DB migration)
+  if ($action === 'wallet_bulk_import') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($body) || empty($body['records'])) {
+      http_response_code(400);
+      echo '{"error":"records[] required"}';
+      exit;
+    }
+    $imported = 0;
+    $errors = [];
+    $stmt = $mysqli->prepare(
+      'INSERT IGNORE INTO renthouse_payment_history
+        (settledAt, unit, type, accountDate, payDate, received, adjust, totalPaidDue, carryIn, carryOut, closeType, closeAction, paidItems, pickerSelection, note, updatedAt)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    foreach ($body['records'] as $h) {
+      if (empty($h['settledAt']) || empty($h['unit'])) { $errors[] = 'skip: missing settledAt/unit'; continue; }
+      $settledAt = $h['settledAt'];
+      $unit = $h['unit'];
+      $type = $h['type'] ?? 'settle';
+      $accountDate = $h['accountDate'] ?? '';
+      $payDate = $h['payDate'] ?? '';
+      $received = (float)($h['received'] ?? 0);
+      $adjust = (float)($h['adjust'] ?? 0);
+      $totalPaidDue = (float)($h['totalPaidDue'] ?? 0);
+      $carryIn = (float)($h['carryIn'] ?? 0);
+      $carryOut = (float)($h['carryOut'] ?? 0);
+      $closeType = $h['closeType'] ?? null;
+      $closeAction = $h['closeAction'] ?? null;
+      $paidItems = isset($h['paidItems']) ? json_encode($h['paidItems'], JSON_UNESCAPED_UNICODE) : '[]';
+      $pickerSelection = isset($h['pickerSelection']) ? json_encode($h['pickerSelection'], JSON_UNESCAPED_UNICODE) : '[]';
+      $note = $h['note'] ?? '';
+      $updatedAt = $h['updatedAt'] ?? date('c');
+      $stmt->bind_param('sssssddddddssssss',
+        $settledAt, $unit, $type, $accountDate, $payDate,
+        $received, $adjust, $totalPaidDue, $carryIn, $carryOut,
+        $closeType, $closeAction, $paidItems, $pickerSelection, $note, $updatedAt);
+      if ($stmt->execute() && $stmt->affected_rows > 0) $imported++;
+    }
+    echo json_encode(['ok' => true, 'imported' => $imported, 'errors' => $errors]);
+    exit;
+  }
 }
 
 http_response_code(400);
