@@ -55,15 +55,21 @@ for each item:
 - **誤刪要立刻認** — 中間有一輪我把全付的列藏起來,使用者直接 4 條訊息+「在嗎」連發 → 直接 revert,不要硬解釋
 - **改完一定要 trace 數字流** — 6972 vs 6680 那個是因為沒顯式列出 292 已收,使用者就「看到對不上」失去信心。trace 表格行可解 95% 的「為什麼不平衡」疑慮
 
-### 待 promote 前要做
-- [ ] 在 dev 跑一輪完整 happy path(完繳 + 溢繳 + 缺繳 三種測過)
-- [ ] 跑 partial 場景(實收 2000 / picker 大小筆混合)
-- [ ] 跑「修改歷史 carryOut」確認套入後主卡 prevVal 對齊
-- [ ] 確認 NAS API set_paid_amount 不會被 fire-and-forget 蓋掉(picker > 10 筆時)
-- [ ] 完整 promote 流程(備份 + sw cache v7→v8 + scp + git tag v3.3)
+### V3.3 promote 已執行(2026-06-20 下午,commit `a52049e`)
+完整跑完 8-step promote 流程:
+1. NAS 備份:`/share/CACHEDEV3_DATA/backups/renthouse/pre_v3.3_promote_20260620_154509/`(via symlink)
+2. 本地 `cp index-dev.html index.html`
+3. sw cache `v7 → v8`(`elec-calc-v8`)
+4. index.html register `v=5 → v=8`(注意:dev 那邊還停在 v=5 沒更新,promote 時順手對齊)
+5. scp 上 NAS production
+6. git commit + push(`a52049e`)
+7. 拷貝 Google Drive `production_v3.3_promoted_20260620/`
+8. curl 驗證:本地 = NAS = production HTTP 三方 MD5 對齊 ✓
+
+### 教訓:dev → production 不是 sw cache 唯一,index 內 register 號也要對齊
+這次發現 `index-dev.html` 中 `register('sw.js?v=5')` 從 V3.0 之後就沒升過(只有 production 那邊每次 promote 改)。Promote 時順手對齊 v8 (跟 sw.js CACHE_NAME)。**未來改 dev 也要記得改 register 號,免得 dev sandbox 拿舊 SW 行為混淆測試。**
 
 ### 不做的事
-- ❌ 立刻 promote(V3.2 才上 13 天,使用者體驗 V3.2 的「省心預設」流程後再決定要不要 V3.3 換掉)
 - ❌ 把帳目卡的應繳明細也跟列印對齊「只列未繳」(故意維持兩種觀點)
 
 ---

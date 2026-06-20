@@ -31,7 +31,8 @@ scp index-dev.html nas:/share/CACHEDEV1_DATA/Web/renthouse-dev/index.html
 歷史 promote 紀錄:
 - 2026-06-06 上午:V3.0 promote(commit `8f344c5`,sw cache v4→v5)
 - 2026-06-06 晚上:V3.1 promote(commit `ddaff1e`,sw cache v5→v6)
-- 2026-06-07 下午:**V3.2 promote**(commit `8a8de67`,sw cache v6→v7)— 記帳系統最終定型
+- 2026-06-07 下午:V3.2 promote(commit `8a8de67`,sw cache v6→v7)— 記帳系統最終定型
+- 2026-06-20 下午:**V3.3 promote**(commit `a52049e`,sw cache v7→v8)— picker 脫鉤 + 自動分配實收 + 歷史條列式
 
 ---
 
