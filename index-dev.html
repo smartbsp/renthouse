@@ -239,6 +239,7 @@
   }
   #toast.show { opacity: 1; }
   input[type="checkbox"] { width: auto; min-height: auto; padding: 0; -webkit-appearance: checkbox !important; appearance: checkbox !important; }
+  input[type="radio"] { width: auto; min-height: auto; padding: 0; -webkit-appearance: radio !important; appearance: radio !important; }
 </style>
 </head>
 <body>
@@ -3133,9 +3134,13 @@ function renderAccountStatus() {
     else                  { balText = '0 元';           balColor = '#475569'; balIcon = '✓'; }
     var subText = bal > 0.5 ? '預繳餘額(可扣)' : bal < -0.5 ? '缺繳(待補)' : '結清';
     return '<div style="flex:1;background:#fff;border:2px solid ' + color + ';border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4;">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:4px;">'
         + '<span style="font-weight:700;color:' + color + ';font-size:12px;">' + label + ' 預繳帳戶</span>'
-        + '<button onclick="openDepositPrepayModal(\'' + unit + '\')" style="background:' + color + ';color:#fff;border:none;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer;font-weight:700;">💰 預繳</button>'
+        + '<span style="display:flex;gap:3px;">'
+          + '<button onclick="openWalletTxnModal(\'' + unit + '\',\'prepay\')" style="background:#16a34a;color:#fff;border:none;font-size:10px;padding:3px 7px;border-radius:4px;cursor:pointer;font-weight:700;">💰 預繳</button>'
+          + '<button onclick="openWalletTxnModal(\'' + unit + '\',\'withdraw\')" style="background:#dc2626;color:#fff;border:none;font-size:10px;padding:3px 7px;border-radius:4px;cursor:pointer;font-weight:700;">💸 提款</button>'
+          + '<button onclick="openCloseAccountModal(\'' + unit + '\')" style="background:#64748b;color:#fff;border:none;font-size:10px;padding:3px 7px;border-radius:4px;cursor:pointer;font-weight:700;">📁 結清</button>'
+        + '</span>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;font-weight:700;color:' + balColor + ';">'
         + '<span style="font-size:13px;">' + balIcon + ' ' + subText + '</span>'
@@ -3150,66 +3155,78 @@ function renderAccountStatus() {
   bar.style.display = '';
 }
 
-// 預繳:獨立 modal,房客先存錢進 wallet,寫一筆 history(picker 空,totalPaidDue=0)
-function openDepositPrepayModal(unit) {
+// 預繳 / 提款:共用 modal。type='prepay' → received=+X(綠);type='withdraw' → received=-X(紅)
+function openWalletTxnModal(unit, type) {
   var ident = UNIT_COLOR[unit];
   var d = new Date();
   var today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  var isPrepay = type === 'prepay';
+  var titleIcon = isPrepay ? '💰' : '💸';
+  var titleLabel = isPrepay ? '預繳(房客存入)' : '提款(退錢給房客)';
+  var amtLabel = isPrepay ? '💵 預繳金額' : '💸 提款金額';
+  var amtColor = isPrepay ? '#16a34a' : '#dc2626';
+  var hint = isPrepay
+    ? '預繳會加進戶 ' + unit + ' 預繳帳戶,下次結算時自動扣抵。'
+    : '提款會從戶 ' + unit + ' 預繳帳戶扣除(可造成餘額轉負,表示後續仍要補繳)。';
+  var notePlaceholder = isPrepay ? 'e.g. 預繳 6 月 + 7 月' : 'e.g. 退押金部分';
 
   var overlay = document.createElement('div');
-  overlay.id = 'depositPrepayOverlay';
+  overlay.id = 'walletTxnOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
   overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
-  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:360px;width:100%;border:2px solid ' + ident + ';">'
-    + '<div style="padding:12px 16px;background:' + ident + ';color:#fff;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;">'
-      + '<span style="font-size:14px;font-weight:700;">💰 戶 ' + unit + ' 預繳</span>'
-      + '<button onclick="document.getElementById(\'depositPrepayOverlay\').remove()" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">✕</button>'
+  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:360px;width:100%;border:2px solid ' + amtColor + ';">'
+    + '<div style="padding:12px 16px;background:' + amtColor + ';color:#fff;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;">'
+      + '<span style="font-size:14px;font-weight:700;">' + titleIcon + ' 戶 ' + unit + ' · ' + titleLabel + '</span>'
+      + '<button onclick="document.getElementById(\'walletTxnOverlay\').remove()" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">✕</button>'
     + '</div>'
     + '<div style="padding:14px;font-size:13px;">'
-      + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">📅 預繳日期</div>'
-      + '<input type="date" id="dpDate" value="' + today + '" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;color:' + ident + ';font-weight:700;"></div>'
-      + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">💵 預繳金額</div>'
-      + '<input type="number" id="dpAmount" placeholder="0" step="1" style="width:100%;padding:8px;border:1px solid #16a34a;border-radius:5px;font-size:18px;color:#16a34a;font-weight:700;text-align:right;"> 元</div>'
+      + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">📅 日期</div>'
+      + '<input type="date" id="wtxDate" value="' + today + '" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;color:' + ident + ';font-weight:700;"></div>'
+      + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">' + amtLabel + '</div>'
+      + '<input type="number" id="wtxAmount" placeholder="0" step="1" min="1" style="width:100%;padding:8px;border:1px solid ' + amtColor + ';border-radius:5px;font-size:18px;color:' + amtColor + ';font-weight:700;text-align:right;"> 元</div>'
       + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">📝 備註(選填)</div>'
-      + '<input type="text" id="dpNote" placeholder="e.g. 預繳 6 月 + 7 月" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;"></div>'
-      + '<div style="font-size:11px;color:#94a3b8;line-height:1.5;">預繳會加進戶 ' + unit + ' 預繳帳戶,下次結算時自動扣抵。</div>'
+      + '<input type="text" id="wtxNote" placeholder="' + notePlaceholder + '" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;"></div>'
+      + '<div style="font-size:11px;color:#94a3b8;line-height:1.5;">' + hint + '</div>'
     + '</div>'
     + '<div style="padding:10px 14px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;">'
-      + '<button onclick="document.getElementById(\'depositPrepayOverlay\').remove()" style="background:#94a3b8;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">取消</button>'
-      + '<button onclick="_saveDepositPrepay(\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">✓ 存入</button>'
+      + '<button onclick="document.getElementById(\'walletTxnOverlay\').remove()" style="background:#94a3b8;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">取消</button>'
+      + '<button onclick="_saveWalletTxn(\'' + unit + '\',\'' + type + '\')" style="background:' + amtColor + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">' + (isPrepay ? '✓ 存入' : '✓ 提款') + '</button>'
     + '</div>'
   + '</div>';
   document.body.appendChild(overlay);
-  setTimeout(function() { var i = document.getElementById('dpAmount'); if (i) i.focus(); }, 100);
+  setTimeout(function() { var i = document.getElementById('wtxAmount'); if (i) i.focus(); }, 100);
 }
 
-function _saveDepositPrepay(unit) {
-  var date = (document.getElementById('dpDate') || {}).value || '';
-  var amount = Math.round(parseFloat((document.getElementById('dpAmount') || {}).value || '0') || 0);
-  var note = (document.getElementById('dpNote') || {}).value || '';
+function _saveWalletTxn(unit, type) {
+  var date = (document.getElementById('wtxDate') || {}).value || '';
+  var amount = Math.round(parseFloat((document.getElementById('wtxAmount') || {}).value || '0') || 0);
+  var note = (document.getElementById('wtxNote') || {}).value || '';
   if (!date) { showToast('⚠️ 請選日期'); return; }
-  if (amount <= 0) { showToast('⚠️ 預繳金額需 > 0'); return; }
+  if (amount <= 0) { showToast('⚠️ 金額需 > 0'); return; }
+
+  var isPrepay = type === 'prepay';
+  var signedAmount = isPrepay ? amount : -amount;
 
   var history = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
   history.push({
     unit: unit,
-    type: 'prepay',
+    type: type,
     settledAt: new Date().toISOString(),
     accountDate: date,
     payDate: date,
     carryIn: 0,
-    received: amount,
+    received: signedAmount,
     adjust: 0,
-    carryOut: amount,  // legacy 欄,顯示用
+    carryOut: signedAmount,
     totalPaidDue: 0,
     paidItems: [],
     pickerSelection: [],
     note: note
   });
   localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
-  showToast('💰 戶 ' + unit + ' 預繳 +' + amount + ' 已存入');
+  showToast((isPrepay ? '💰 預繳 +' : '💸 提款 −') + amount + ' 已存入戶 ' + unit);
 
-  var ov = document.getElementById('depositPrepayOverlay');
+  var ov = document.getElementById('walletTxnOverlay');
   if (ov) ov.remove();
   renderAccountStatus();
   renderSummary();
@@ -3543,26 +3560,47 @@ function _unitAccount(unit) {
         else                       { op = '±'; valColor = '#f59e0b'; }
         return '<div style="display:flex;justify-content:space-between;padding:4px 0;align-items:center;font-size:14px;">'
           + '<span><span style="color:' + valColor + ';font-weight:700;font-size:16px;">' + op + '</span> 調整 <span style="font-size:11px;color:#94a3b8;">(正補/負折)</span></span>'
-          + '<input type="number" step="1" value="' + (adjustVal || '') + '" placeholder="0" ' + disAttr + ' onchange="setAdjust(\'' + unit + '\', this.value)" '
+          + '<input type="number" step="1" value="' + (adjustVal || '') + '" placeholder="0" ' + disAttr + ' oninput="setAdjust(\'' + unit + '\', this.value)" '
           + 'style="width:85px;text-align:right;padding:5px 6px;border:1.5px solid #f59e0b;border-radius:4px;font-size:14px;color:#b45309;font-weight:700;' + disStyle + '">'
         + '</div>';
       })()
-    + '<div style="display:flex;justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin:6px 0 0;align-items:center;background:#fff;border-radius:4px;">'
-      + '<span style="font-weight:700;font-size:16px;">本期應繳金額</span>'
-      + '<span style="color:' + ident + ';font-size:28px;font-weight:800;">' + dueThis.toFixed(0) + '</span>'
+    + '<div style="display:flex;justify-content:space-between;padding:6px 6px;border-top:1px solid #cbd5e1;margin-top:4px;align-items:center;font-size:14px;">'
+      + '<span style="font-weight:600;">本期應繳金額 <span style="font-size:10px;color:#94a3b8;">(應收+調整)</span></span>'
+      + '<span style="color:' + ident + ';font-size:18px;font-weight:700;">' + dueThis.toFixed(0) + '</span>'
     + '</div>'
+    // 預繳折抵 / 缺繳補繳:wallet 帶下來一起算
+    + (function() {
+        if (balanceBefore > 0.5) {
+          var folded = Math.min(balanceBefore, dueThis);
+          return '<div style="display:flex;justify-content:space-between;padding:4px 6px;align-items:center;font-size:13px;color:#16a34a;">'
+            + '<span><span style="font-weight:700;font-size:15px;">−</span> 預繳折抵 <span style="font-size:10px;color:#94a3b8;">(從預繳帳戶)</span></span>'
+            + '<span style="font-weight:700;">' + folded.toFixed(0) + '</span>'
+          + '</div>';
+        }
+        if (balanceBefore < -0.5) {
+          return '<div style="display:flex;justify-content:space-between;padding:4px 6px;align-items:center;font-size:13px;color:#dc2626;">'
+            + '<span><span style="font-weight:700;font-size:15px;">+</span> 上期缺繳 <span style="font-size:10px;color:#94a3b8;">(累欠待補)</span></span>'
+            + '<span style="font-weight:700;">' + Math.abs(balanceBefore).toFixed(0) + '</span>'
+          + '</div>';
+        }
+        return '';
+      })()
+    // 本期實際應付(房客真的要付的)
+    + (function() {
+        var actual = Math.round(dueThis - balanceBefore);  // balance>0 → 減,balance<0 → 加
+        if (actual < 0) actual = 0;  // 預繳超過應繳,actual 為 0(剩餘預繳由 result 算)
+        return '<div style="display:flex;justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;border-radius:4px;">'
+          + '<span style="font-weight:700;font-size:16px;">本期實際應付</span>'
+          + '<span style="color:' + ident + ';font-size:28px;font-weight:800;">' + actual + '</span>'
+        + '</div>';
+      })()
     + '</div>'  // ╚══ 房客面 ══╝
-    // ╔══ 房東面 收款記帳區(預繳帳戶流) ══╗
+    // ╔══ 房東面 收款記帳區 ══╗
     + '<div style="background:#f1f5f9;border:1px dashed #94a3b8;border-radius:8px;padding:8px;margin-bottom:6px;">'
-    // 預繳餘額(結算前)
-    + '<div style="display:flex;justify-content:space-between;padding:4px 0;align-items:center;font-size:13px;">'
-      + '<span>💰 預繳餘額 <span style="font-size:11px;color:#94a3b8;">(結算前)</span></span>'
-      + '<span style="display:inline-block;width:95px;text-align:right;padding:5px 6px;background:#fff;border:1px dashed ' + balBeforeColor + ';border-radius:4px;font-size:14px;color:' + balBeforeColor + ';font-weight:700;">' + _bSign(balanceBefore) + '</span>'
-    + '</div>'
     // 實收款項
     + '<div style="display:flex;justify-content:space-between;padding:4px 0;align-items:center;font-size:14px;">'
       + '<span><span style="color:#16a34a;font-weight:700;font-size:16px;">+</span> 實收款項 <span style="font-size:11px;color:#94a3b8;">(本期匯款)</span></span>'
-      + '<input type="number" step="1" value="' + (paidVal || '') + '" placeholder="0" ' + disAttr + ' onchange="setReceived(\'' + unit + '\', this.value)" '
+      + '<input type="number" step="1" value="' + (paidVal || '') + '" placeholder="0" ' + disAttr + ' oninput="setReceived(\'' + unit + '\', this.value)" '
       + 'style="width:95px;text-align:right;padding:5px 6px;border:1.5px solid #16a34a;border-radius:4px;font-size:14px;color:#16a34a;font-weight:700;' + disStyle + '">'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;padding:4px 0;align-items:center;font-size:13px;">'
@@ -3578,40 +3616,81 @@ function _unitAccount(unit) {
     + '</div>'  // ╚══ 房東面 ══╝'
     + (locked
         ? '<button class="small" onclick="unlockEdit(\'' + unit + '\')" style="width:100%;margin-top:8px;background:#fbbf24;color:#fff;font-size:14px;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">✎ 編輯</button>'
-        : '<button class="small" onclick="rolloverPeriod(\'' + unit + '\',' + diff + ')" style="width:100%;margin-top:8px;background:' + ident + ';color:#fff;font-size:14px;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">💾 儲存(寫入歷史)</button>')
+        : '<button class="small" onmousedown="event.preventDefault()" onclick="rolloverPeriod(\'' + unit + '\')" style="width:100%;margin-top:8px;background:' + ident + ';color:#fff;font-size:14px;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">💾 儲存(寫入歷史)</button>')
   + '</div>';
+}
+
+// debounced render — 避免 oninput 每打 1 字 re-render(會弄丟焦點)
+var _renderDebounceTimer = null;
+function _scheduleRender() {
+  clearTimeout(_renderDebounceTimer);
+  _renderDebounceTimer = setTimeout(function() {
+    renderSummary();
+    renderAccountStatus();
+  }, 350);
 }
 
 function setReceived(unit, val) {
   var n = parseFloat(val) || 0;
   localStorage.setItem('renthouseReceivedThis' + unit, String(n));
-  showToast('戶 ' + unit + ' 已收已存:' + n);
-  renderSummary();
+  _scheduleRender();
 }
 
 function setAdjust(unit, val) {
   var n = parseFloat(val) || 0;
   localStorage.setItem('renthouseAdjust' + unit, String(n));
-  showToast('戶 ' + unit + ' 調整已存:' + (n >= 0 ? '+' : '') + n);
-  renderSummary();
+  _scheduleRender();
 }
 
-// 預繳餘額(wallet)= Σ(received + adjust − totalPaidDue) for unit's history,排除 excludeSettledAt
-// 公式來源:carryOut(i) = carryIn(i) + received − totalPaidDue − adjust
-//          所以 latest_carryOut = Σ(received − totalPaidDue − adjust)
-//          但「補繳/折讓」semantic:adjust > 0 = 補繳要多付 → balance 減少
-//          所以 balanceChange = received − totalPaidDue − adjust ✓
+// 找該戶最近一筆 換約 (closeType='換約') 的 settledAt — 用來界定「當前 era」起點
+// DB 完整保留所有 records;UI 預設只顯示「換約之後」的(新房客看不到舊資料)
+// 房東若要看完整歷史,toggle window._showAllHistory = true
+function _getCurrentEraStart(unit) {
+  var hist = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+  var latestSa = null;
+  hist.forEach(function(h) {
+    if (h.unit !== unit) return;
+    if (h.type === 'close' && h.closeType === '換約') {
+      var sa = h.settledAt || '';
+      if (!latestSa || sa > latestSa) latestSa = sa;
+    }
+  });
+  return latestSa;
+}
+
+// 預繳餘額(wallet)= Σ(received − totalPaidDue − adjust) for unit's history
+// 預設只算「當前 era」(換約之後);設 window._showAllHistory=true 看全部
+//
+// 同日按時間排序(支援同日多次 💾):
+//   - 無 beforeDate            → 全部 records (top bar)
+//   - 有 beforeDate            → accountDate <= beforeDate 都含
+//   - 有 excludeSettledAt      → 同日的 record,settledAt 早於 excludeSettledAt 才計入
 function _computeBalance(unit, beforeDate, excludeSettledAt) {
   var hist = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+  var eraStart = window._showAllHistory ? null : _getCurrentEraStart(unit);
   return hist.reduce(function(s, h) {
     if (h.unit !== unit) return s;
     if (excludeSettledAt && h.settledAt === excludeSettledAt) return s;
-    if (beforeDate && h.accountDate && h.accountDate >= beforeDate) return s;
+    // era filter:換約之前 (含換約本身) 排除(已歸 0,不要重複算)
+    if (eraStart && (h.settledAt || '') <= eraStart) return s;
+    if (beforeDate && h.accountDate) {
+      if (h.accountDate > beforeDate) return s;
+      if (h.accountDate === beforeDate && excludeSettledAt && h.settledAt > excludeSettledAt) return s;
+    }
     var r = parseFloat(h.received) || 0;
     var a = parseFloat(h.adjust) || 0;
     var d = parseFloat(h.totalPaidDue) || 0;
     return s + r - d - a;
   }, 0);
+}
+
+window._showAllHistory = false;
+function toggleShowAllHistory(unit) {
+  window._showAllHistory = !window._showAllHistory;
+  renderAccountStatus();
+  renderSummary();
+  var hov = document.getElementById('paymentHistoryOverlay');
+  if (hov) { hov.remove(); viewPaymentHistory(unit); }
 }
 
 // 全局:從歷史找該戶最近一筆 (accountDate < beforeDate) 的 carryOut(legacy,不再用,留著怕 print 還在用)
@@ -3659,16 +3738,22 @@ function _snapshotPaidItems(unit) {
   return items;
 }
 
-function rolloverPeriod(unit, net) {
+function rolloverPeriod(unit) {
+  // 先 flush 任何還沒 blur 的 input(避免 race:user 在 input 裡按 💾)
+  var activeEl = document.activeElement;
+  if (activeEl && activeEl.tagName === 'INPUT' && activeEl.onchange) {
+    activeEl.blur();
+  }
   var accountDate = localStorage.getItem('renthouseAccountDate' + unit) || '';
   if (!accountDate) { showToast('⚠️ 請先設定記帳日期'); return; }
-  // 新模型(wallet):不再存 carryIn(meaningless),歷史 record 純 income/expense
   var received = parseFloat(localStorage.getItem('renthouseReceivedThis' + unit) || '0') || 0;
   var adjust = parseFloat(localStorage.getItem('renthouseAdjust' + unit) || '0') || 0;
   var payDate = localStorage.getItem('renthousePayDate' + unit) || '';
 
   var paidItems = _snapshotPaidItems(unit);
   var totalPaidDue = paidItems.reduce(function(s, x) { return s + x.due; }, 0);
+  // net = balance change for this period = received - totalPaidDue - adjust
+  var net = received - totalPaidDue - adjust;
   // 該期使用的 picker 選擇 + 整筆 record snapshot(套入時逐欄位比對用)
   var pickerSelection = [];
   try {
@@ -3851,9 +3936,13 @@ function filterPaymentHistoryByDate() {
   var ySel = document.getElementById('histYear');
   var mSel = document.getElementById('histMonth');
   var sInp = document.getElementById('histSearch');
+  var fromInp = document.getElementById('histDateFrom');
+  var toInp = document.getElementById('histDateTo');
   var y = ySel ? ySel.value : '';
   var m = mSel ? mSel.value : '';
   var q = sInp ? sInp.value.trim().toLowerCase() : '';
+  var from = fromInp ? fromInp.value : '';
+  var to = toInp ? toInp.value : '';
   var content = document.getElementById('histContent');
   if (!content) return;
   var cards = content.children;
@@ -3863,7 +3952,9 @@ function filterPaymentHistoryByDate() {
     var yMatch = !y || date.substring(0, 4) === y;
     var mMatch = !m || date.substring(5, 7) === m;
     var qMatch = !q || card.textContent.toLowerCase().indexOf(q) >= 0;
-    card.style.display = (yMatch && mMatch && qMatch) ? '' : 'none';
+    var fromMatch = !from || date >= from;
+    var toMatch = !to || date <= to;
+    card.style.display = (yMatch && mMatch && qMatch && fromMatch && toMatch) ? '' : 'none';
   }
 }
 
@@ -3917,14 +4008,16 @@ function printInvoice(unit) {
   entries.sort(function(a, b) { return (a.billMonth || '').localeCompare(b.billMonth || ''); });
 
   var sumDue = entries.reduce(function(s, x) { return s + x.due; }, 0);
-  // 上期溢(缺)繳 從歷史抓(跟主卡邏輯一致)
-  var prevVal = _getPrevFromHistory(unit, localStorage.getItem('renthouseAccountDate' + unit) || '');
+  var dateVal = localStorage.getItem('renthouseAccountDate' + unit) || '';
+  var balanceBefore = Math.round(_computeBalance(unit, dateVal));
   var adjustVal = parseFloat(localStorage.getItem('renthouseAdjust' + unit) || '0') || 0;
   var paidVal = parseFloat(localStorage.getItem('renthouseReceivedThis' + unit) || '0') || 0;
-  var dueThis = sumDue - prevVal + adjustVal;
-  var diff = paidVal - dueThis;  // 正=溢/負=缺
-  var dateVal = localStorage.getItem('renthouseAccountDate' + unit) || '';
+  var dueThis = sumDue + adjustVal;  // 本期應繳金額(gross,未折抵)
+  var actualPay = Math.max(0, dueThis - balanceBefore);  // 實際應付(扣完預繳)
   var payDateVal = localStorage.getItem('renthousePayDate' + unit) || '';
+  // legacy prevVal for compat with old html template
+  var prevVal = 0;
+  var diff = paidVal - dueThis;
 
   var itemRows = entries.map(function(x) {
     var kc = x.type === '電費' ? KIND_COLOR.electric : KIND_COLOR.water;
@@ -3943,12 +4036,17 @@ function printInvoice(unit) {
   function calcLine(label, val, color, sign) {
     return '<div class="calc"><span class="calc-l">' + label + '</span><span class="calc-r" style="color:' + color + ';">' + sign + Math.abs(val).toFixed(0) + '</span></div>';
   }
-  var prevLineHtml = '';
-  if (prevVal > 0.5) prevLineHtml = calcLine('上期溢繳折抵', prevVal, '#16a34a', '− ');
-  else if (prevVal < -0.5) prevLineHtml = calcLine('上期缺繳補繳', prevVal, '#dc2626', '+ ');
   var adjLineHtml = '';
   if (adjustVal > 0.5) adjLineHtml = calcLine('調整(補繳)', adjustVal, '#b45309', '+ ');
   else if (adjustVal < -0.5) adjLineHtml = calcLine('調整(折讓)', adjustVal, '#16a34a', '− ');
+  // 預繳折抵 / 缺繳補繳(wallet 帶下來)
+  var walletLineHtml = '';
+  if (balanceBefore > 0.5) {
+    var folded = Math.min(balanceBefore, dueThis);
+    walletLineHtml = calcLine('預繳折抵 (從預繳帳戶)', folded, '#16a34a', '− ');
+  } else if (balanceBefore < -0.5) {
+    walletLineHtml = calcLine('上期缺繳補繳 (累欠)', Math.abs(balanceBefore), '#dc2626', '+ ');
+  }
 
   var settleHtml = '';
   if (paidVal > 0.5 || Math.abs(diff) > 0.5) {
@@ -4021,8 +4119,9 @@ function printInvoice(unit) {
         + '<div style="margin-top:10px;padding-top:8px;border-top:1.5px solid #e2e8f0;display:flex;justify-content:space-between;font-weight:700;">'
           + '<span>應繳款合計</span><span style="color:#dc2626;font-size:16px;">' + sumDue.toFixed(0) + '</span>'
         + '</div>'
-        + (prevLineHtml || adjLineHtml ? '<div style="margin-top:6px;">' + prevLineHtml + adjLineHtml + '</div>' : '')
-        + '<div class="total-block"><span class="lbl">本期應繳金額</span><span class="amt">' + dueThis.toFixed(0) + '<small>元</small></span></div>'
+        + (adjLineHtml ? '<div style="margin-top:6px;">' + adjLineHtml + '</div>' : '')
+        + (walletLineHtml ? '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">' + walletLineHtml + '</div>' : '')
+        + '<div class="total-block"><span class="lbl">本期實際應付</span><span class="amt">' + actualPay.toFixed(0) + '<small>元</small></span></div>'
       + '</div>'
       + settleHtml
     + '</div>'
@@ -4041,13 +4140,18 @@ function printInvoice(unit) {
 }
 
 function viewPaymentHistory(unit) {
-  var history = (JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]'))
-    .filter(function(h) { return h.unit === unit; })
-    .sort(function(a, b) {
-      var ad = a.accountDate || a.settledAt || '';
-      var bd = b.accountDate || b.settledAt || '';
-      return bd.localeCompare(ad);
-    });
+  var rawHistory = (JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]'))
+    .filter(function(h) { return h.unit === unit; });
+  // era filter:預設只顯示「換約之後」(同 _computeBalance 邏輯)
+  var eraStart = window._showAllHistory ? null : _getCurrentEraStart(unit);
+  var history = rawHistory.filter(function(h) {
+    if (!eraStart) return true;
+    return (h.settledAt || '') > eraStart;
+  }).sort(function(a, b) {
+    var ad = a.accountDate || a.settledAt || '';
+    var bd = b.accountDate || b.settledAt || '';
+    return bd.localeCompare(ad);
+  });
   var ident = UNIT_COLOR[unit];
 
   var content;
@@ -4074,10 +4178,24 @@ function viewPaymentHistory(unit) {
       var balAfter = runningMap[sa];
       var bills = (h.paidItems || []).length;
       var isPrepay = h.type === 'prepay';
+      var isWithdraw = h.type === 'withdraw';
+      var isClose = h.type === 'close';
+      // era 分隔線:顯示全部時,在 換約 record 後插入 era 分隔
+      var eraSeparator = '';
+      if (window._showAllHistory && isClose && h.closeType === '換約') {
+        eraSeparator = '<div style="text-align:center;padding:8px 10px;margin:8px 0;background:#fff7ed;border-top:2px dashed #ea580c;border-bottom:2px dashed #ea580c;color:#9a3412;font-size:11px;font-weight:700;">━━ ⇧ 以下為「' + (h.closeType || '') + '」之前的歷史(過往房客) ⇩ ' + (h.note ? '· ' + h.note : '') + ' ━━</div>';
+      }
+      var isWalletTxn = isPrepay || isWithdraw || isClose;
 
       var deltaColor = delta > 0.5 ? '#16a34a' : delta < -0.5 ? '#dc2626' : '#475569';
       var deltaIcon, deltaLabel;
-      if (isPrepay) { deltaIcon = '💰'; deltaLabel = '預繳 +' + delta; }
+      if (isClose) {
+        deltaIcon = '📁';
+        deltaLabel = (h.closeType || '結清') + (rcv > 0.5 ? ' · 補繳 +' + rcv : rcv < -0.5 ? ' · 退款 ' + rcv : '');
+        deltaColor = '#64748b';
+      }
+      else if (isPrepay) { deltaIcon = '💰'; deltaLabel = '預繳 +' + Math.abs(rcv); }
+      else if (isWithdraw) { deltaIcon = '💸'; deltaLabel = '提款 −' + Math.abs(rcv); }
       else if (delta > 0.5) { deltaIcon = '✨'; deltaLabel = '預繳 +' + delta; }
       else if (delta < -0.5) { deltaIcon = '⚠️'; deltaLabel = '缺繳 ' + Math.abs(delta); }
       else { deltaIcon = '✓'; deltaLabel = '結清'; }
@@ -4087,16 +4205,23 @@ function viewPaymentHistory(unit) {
       var delPending = _delConfirmTarget === sa;
       var bgIdent = unit === 'A' ? '#eff6ff' : '#f0fdf4';
 
-      var subText = isPrepay
-        ? '💰 預繳 +' + rcv + (h.note ? ' <span style="color:#94a3b8;">· ' + h.note + '</span>' : '')
-        : '應繳 <span style="color:#dc2626;font-weight:700;">' + sumDueH + '</span> · 實收 <span style="color:#16a34a;font-weight:700;">' + rcv + '</span> · <span style="color:' + deltaColor + ';font-weight:700;">' + deltaIcon + ' ' + deltaLabel + '</span>';
+      var subText;
+      if (isWalletTxn) {
+        subText = '<span style="color:' + deltaColor + ';font-weight:700;">' + deltaIcon + ' ' + deltaLabel + '</span>' + (h.note ? ' <span style="color:#94a3b8;">· ' + h.note + '</span>' : '');
+      } else {
+        subText = '應繳 <span style="color:#dc2626;font-weight:700;">' + sumDueH + '</span> · 實收 <span style="color:#16a34a;font-weight:700;">' + rcv + '</span> · <span style="color:' + deltaColor + ';font-weight:700;">' + deltaIcon + ' ' + deltaLabel + '</span>';
+      }
+      var badge = '';
+      if (isClose) badge = ' <span style="background:#64748b;color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;">📁 ' + (h.closeType || '結清') + '</span>';
+      else if (isPrepay) badge = ' <span style="background:#16a34a;color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;">預繳</span>';
+      else if (isWithdraw) badge = ' <span style="background:#dc2626;color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;">提款</span>';
+      else badge = ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(' + bills + ' 筆)</span>';
 
-      return '<div data-date="' + (h.accountDate || '') + '" style="border:1px solid ' + ident + ';border-radius:8px;margin-bottom:6px;background:' + bgIdent + ';padding:8px 10px;">'
+      return eraSeparator + '<div data-date="' + (h.accountDate || '') + '" style="border:1px solid ' + ident + ';border-radius:8px;margin-bottom:6px;background:' + bgIdent + ';padding:8px 10px;">'
         + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
           + '<div style="flex:1;min-width:160px;">'
-            + '<div style="font-weight:700;color:' + ident + ';font-size:14px;">📅 ' + periodLabel + (isPrepay ? ' <span style="background:#16a34a;color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;">預繳</span>' : ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(' + bills + ' 筆)</span>') + '</div>'
+            + '<div style="font-weight:700;color:' + ident + ';font-size:14px;">📅 ' + periodLabel + badge + '</div>'
             + '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + subText + '</div>'
-            + '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">結算後預繳: <span style="color:' + balColor + ';font-weight:700;">' + balText + '</span></div>'
           + '</div>'
           + '<div style="display:flex;gap:4px;">'
             + '<button onclick="editHistoryRecord(\'' + sa + '\',\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;font-size:11px;padding:5px 9px;border-radius:5px;cursor:pointer;font-weight:700;">✏️ 修改</button>'
@@ -4114,8 +4239,12 @@ function viewPaymentHistory(unit) {
   overlay.innerHTML = '<div style="background:#f8fafc;border-radius:12px;max-width:480px;width:100%;max-height:85vh;display:flex;flex-direction:column;">'
     + '<div style="padding:12px 16px;border-bottom:1px solid #e2e8f0;background:#fff;border-radius:12px 12px 0 0;">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
-        + '<h3 style="margin:0;color:' + ident + ';font-size:16px;">戶 ' + unit + ' 繳費歷史 <span style="font-size:11px;color:#94a3b8;">(' + history.length + ' 期)</span></h3>'
-        + '<button onclick="document.getElementById(\'paymentHistoryOverlay\').remove()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1;">✕</button>'
+        + '<h3 style="margin:0;color:' + ident + ';font-size:16px;">戶 ' + unit + ' 繳費歷史 <span style="font-size:11px;color:#94a3b8;">(' + history.length + ' 期' + (window._showAllHistory ? '·全' : '·當前 era') + ')</span></h3>'
+        + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
+          + '<button onclick="toggleShowAllHistory(\'' + unit + '\')" style="background:' + (window._showAllHistory ? '#dc2626' : '#64748b') + ';color:#fff;border:none;font-size:11px;padding:5px 9px;border-radius:5px;cursor:pointer;font-weight:700;">' + (window._showAllHistory ? '📜 顯示全部(房東 audit)' : '📜 僅當前 era') + '</button>'
+          + (history.length > 0 ? '<button onclick="printTenantStatement(\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;font-size:12px;padding:5px 10px;border-radius:5px;cursor:pointer;font-weight:700;">📊 對帳單</button>' : '')
+          + '<button onclick="document.getElementById(\'paymentHistoryOverlay\').remove()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1;">✕</button>'
+        + '</div>'
       + '</div>'
       + (history.length > 0
           ? (function() {
@@ -4123,10 +4252,17 @@ function viewPaymentHistory(unit) {
               var yearOpts = '<option value="">全部年</option>' + years.map(function(y) { return '<option value="' + y + '">民國 ' + (parseInt(y) - 1911) + ' 年</option>'; }).join('');
               var monthOpts = '<option value="">全部月</option>';
               for (var m = 1; m <= 12; m++) monthOpts += '<option value="' + String(m).padStart(2, '0') + '">' + m + ' 月</option>';
-              return '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+              return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
                 + '<select id="histYear" onchange="filterPaymentHistoryByDate()" style="flex:1;min-width:90px;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;">' + yearOpts + '</select>'
                 + '<select id="histMonth" onchange="filterPaymentHistoryByDate()" style="flex:1;min-width:80px;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;">' + monthOpts + '</select>'
-                + '<input type="text" id="histSearch" placeholder="🔍 關鍵字" oninput="filterPaymentHistoryByDate()" style="flex:2;min-width:120px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;">'
+                + '<input type="text" id="histSearch" placeholder="🔍 房客名 / 備註" oninput="filterPaymentHistoryByDate()" style="flex:2;min-width:120px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;">'
+              + '</div>'
+              + '<div style="display:flex;gap:6px;align-items:center;font-size:11px;color:#64748b;">'
+                + '<span>📅 日期範圍</span>'
+                + '<input type="date" id="histDateFrom" onchange="filterPaymentHistoryByDate()" style="flex:1;padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;">'
+                + '<span>~</span>'
+                + '<input type="date" id="histDateTo" onchange="filterPaymentHistoryByDate()" style="flex:1;padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;">'
+                + '<button onclick="document.getElementById(\'histDateFrom\').value=\'\';document.getElementById(\'histDateTo\').value=\'\';filterPaymentHistoryByDate();" style="padding:5px 8px;background:#94a3b8;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;">✕</button>'
               + '</div>';
             })()
           : '')
@@ -4307,6 +4443,10 @@ function editHistoryRecord(settledAt, unit) {
   var history = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
   var h = history.find(function(x) { return x.settledAt === settledAt; });
   if (!h) { showToast('⚠️ 找不到該期紀錄'); return; }
+  // 預繳/提款/結清 → 走簡化 modal
+  if (h.type === 'prepay' || h.type === 'withdraw' || h.type === 'close') {
+    return editWalletTxnRecord(settledAt, unit);
+  }
   var ident = UNIT_COLOR[unit];
 
   // 從 snapshot 拉應繳明細(per item),sumDue 用 h.totalPaidDue(save 當下凍結)
@@ -4456,6 +4596,333 @@ function _saveEditedHistory(settledAt, unit) {
   // 關 edit modal,重開歷史 overlay,refresh 主畫面 + balance bar
   renderAccountStatus();
   var ov = document.getElementById('editHistoryOverlay');
+  if (ov) ov.remove();
+  var hov = document.getElementById('paymentHistoryOverlay');
+  if (hov) { hov.remove(); viewPaymentHistory(unit); }
+  renderSummary();
+}
+
+// 房客對帳單列印:銀行對帳單風格,每筆 bill / 實收 / 預繳 / 提款 各自一行,不互抵
+// 預設只列 「當前 era」(換約之後);若 _showAllHistory=true 則列全部
+function printTenantStatement(unit) {
+  var rawHistory = (JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]'))
+    .filter(function(h) { return h.unit === unit; });
+  var eraStart = window._showAllHistory ? null : _getCurrentEraStart(unit);
+  var history = rawHistory.filter(function(h) {
+    if (!eraStart) return true;
+    return (h.settledAt || '') > eraStart;
+  });
+  if (history.length === 0) { showToast('⚠️ 戶 ' + unit + ' 無歷史可印'); return; }
+
+  // 展開:每筆 history 拆成多 row。每 row = 一筆 ledger entry(date, label, amount [signed])
+  var rows = [];
+  history.forEach(function(h) {
+    var d = h.accountDate || '';
+    if (h.type === 'prepay') {
+      rows.push({ date: d, kind: 'prepay', label: '💰 預繳' + (h.note ? ' · ' + h.note : ''), amount: parseFloat(h.received) || 0, settledAt: h.settledAt });
+    } else if (h.type === 'withdraw') {
+      var w = parseFloat(h.received) || 0;
+      rows.push({ date: d, kind: 'withdraw', label: '💸 提款' + (h.note ? ' · ' + h.note : ''), amount: w, settledAt: h.settledAt });
+    } else {
+      // 一般結算:展開每張 bill 為 debit 一行
+      (h.paidItems || []).forEach(function(it) {
+        rows.push({ date: d, kind: 'bill', label: (it.type || '') + ' ' + (it.billMonth || ''), amount: -Math.round(parseFloat(it.due) || 0), settledAt: h.settledAt });
+      });
+      // 調整(若有) — 補繳 (+) 或 折讓 (−);adjust>0 補繳 = 多付,balance−,所以 row 是 -adjust;但這列要對房客直觀:adjust>0 補繳 = -adjust 應收
+      var adj = Math.round(parseFloat(h.adjust) || 0);
+      if (adj > 0.5) rows.push({ date: d, kind: 'adjust', label: '+ 調整(補繳)', amount: -adj, settledAt: h.settledAt });
+      else if (adj < -0.5) rows.push({ date: d, kind: 'adjust', label: '− 調整(折讓)', amount: -adj, settledAt: h.settledAt });
+      // 實收(credit)
+      var rcv = Math.round(parseFloat(h.received) || 0);
+      if (rcv > 0.5 || rcv < -0.5) {
+        rows.push({ date: d, kind: 'receive', label: '🟢 實收' + (h.payDate ? ' (' + h.payDate + ')' : ''), amount: rcv, settledAt: h.settledAt });
+      }
+    }
+  });
+  // 排序:date ASC,同 date 內 bill → adjust → receive(讓房客看到「先扣什麼後加什麼」)
+  var order = { bill: 1, adjust: 2, prepay: 3, withdraw: 4, receive: 5 };
+  rows.sort(function(a, b) {
+    var c = (a.date || '').localeCompare(b.date || '');
+    if (c) return c;
+    return (order[a.kind] || 9) - (order[b.kind] || 9);
+  });
+  // running balance
+  var running = 0;
+  rows.forEach(function(r) { running += r.amount; r.balance = Math.round(running); });
+
+  var ident = UNIT_COLOR[unit];
+  function fmtAmt(v) {
+    if (v > 0) return '<span style="color:#16a34a;font-weight:700;">+' + v + '</span>';
+    if (v < 0) return '<span style="color:#dc2626;font-weight:700;">' + v + '</span>';
+    return '<span style="color:#94a3b8;">0</span>';
+  }
+  function fmtBal(v) {
+    if (v > 0) return '<span style="color:#16a34a;font-weight:700;">+' + v + '</span>';
+    if (v < 0) return '<span style="color:#dc2626;font-weight:700;">' + v + '</span>';
+    return '<span>0</span>';
+  }
+  function rowKindIcon(k) {
+    return k === 'bill' ? '🧾' : k === 'adjust' ? '⚙️' : k === 'prepay' ? '💰' : k === 'withdraw' ? '💸' : k === 'receive' ? '🟢' : '';
+  }
+
+  var bodyRows = rows.map(function(r) {
+    return '<tr>'
+      + '<td>' + (r.date || '—') + '</td>'
+      + '<td>' + r.label + '</td>'
+      + '<td style="text-align:right;">' + fmtAmt(r.amount) + '</td>'
+      + '<td style="text-align:right;">' + fmtBal(r.balance) + '</td>'
+    + '</tr>';
+  }).join('');
+
+  var finalBal = rows.length > 0 ? rows[rows.length - 1].balance : 0;
+  var finalLabel = finalBal > 0 ? '預繳餘額(房東已收,可扣抵後續)' : finalBal < 0 ? '缺繳(尚需補繳)' : '結清';
+  var finalColor = finalBal > 0 ? '#16a34a' : finalBal < 0 ? '#dc2626' : '#475569';
+
+  var html = '<!doctype html><html><head><meta charset="utf-8"><title>戶 ' + unit + ' 繳費對帳單</title>'
+    + '<style>'
+    + '*{box-sizing:border-box;margin:0;padding:0;}'
+    + 'body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;background:#f8fafc;padding:20px 12px;color:#1e293b;}'
+    + '.sheet{max-width:780px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}'
+    + '.head{background:linear-gradient(135deg,' + ident + ',' + ident + 'dd);color:#fff;padding:18px 22px;}'
+    + '.head h1{font-size:20px;font-weight:800;letter-spacing:1px;}'
+    + '.head .sub{font-size:12px;opacity:0.9;margin-top:4px;}'
+    + '.body{padding:14px 18px;}'
+    + 'table{width:100%;border-collapse:collapse;font-size:13px;}'
+    + 'thead th{text-align:left;padding:8px 6px;background:#f1f5f9;border-bottom:2px solid #cbd5e1;color:#475569;font-size:12px;}'
+    + 'thead th:nth-child(3),thead th:nth-child(4){text-align:right;}'
+    + 'tbody td{padding:7px 6px;border-bottom:1px dashed #e2e8f0;}'
+    + 'tbody tr:hover{background:#f8fafc;}'
+    + '.footer{margin-top:14px;background:linear-gradient(135deg,' + finalColor + '15,' + finalColor + '25);border:2px solid ' + finalColor + ';border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;}'
+    + '.footer .label{font-size:13px;color:' + finalColor + ';font-weight:700;}'
+    + '.footer .amount{font-size:24px;color:' + finalColor + ';font-weight:800;}'
+    + '.note{font-size:11px;color:#94a3b8;margin-top:12px;line-height:1.6;}'
+    + '.actions{display:flex;gap:8px;max-width:780px;margin:14px auto 0;}'
+    + '.actions button{flex:1;padding:11px;font-size:13px;font-weight:700;border:none;border-radius:8px;cursor:pointer;color:#fff;}'
+    + '.btn-print{background:' + ident + ';}'
+    + '.btn-close{background:#94a3b8;}'
+    + '@media print{body{background:#fff;padding:0;}.actions{display:none;}.sheet{box-shadow:none;border:1px solid #cbd5e1;}}'
+    + '</style></head><body>'
+    + '<div class="sheet">'
+      + '<div class="head"><h1>📊 戶 ' + unit + ' 繳費對帳單</h1>'
+      + '<div class="sub">期間: ' + (rows[0] ? rows[0].date : '—') + ' ~ ' + (rows[rows.length - 1] ? rows[rows.length - 1].date : '—') + ' · 共 ' + rows.length + ' 筆 ledger 紀錄</div></div>'
+      + '<div class="body">'
+        + '<table><thead><tr><th>日期</th><th>項目</th><th>金額</th><th>累積餘額</th></tr></thead>'
+        + '<tbody>' + bodyRows + '</tbody></table>'
+        + '<div class="footer"><span class="label">📌 當前 ' + finalLabel + '</span><span class="amount">' + (finalBal > 0 ? '+' : '') + finalBal + ' 元</span></div>'
+        + '<div class="note">說明:每筆獨立列出,不互抵。「金額」正號=房客付的或預繳,負號=應繳款或提款;「累積餘額」正號=預繳餘額,負號=尚需補繳。</div>'
+      + '</div>'
+    + '</div>'
+    + '<div class="actions"><button class="btn-print" onclick="window.print()">🖨 列印</button><button class="btn-close" onclick="window.close()">關閉</button></div>'
+  + '</body></html>';
+
+  var w = window.open('', '_blank');
+  if (!w) { showToast('⚠️ 瀏覽器擋了彈出視窗,請允許後再試'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+// 📁 結清(換約/續約):建一筆 transaction 讓 balance 歸 0,並 mark lease boundary
+function openCloseAccountModal(unit) {
+  var ident = UNIT_COLOR[unit];
+  var balance = Math.round(_computeBalance(unit));
+  var d = new Date();
+  var today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+  var balColor = balance > 0.5 ? '#16a34a' : balance < -0.5 ? '#dc2626' : '#475569';
+  var balText = balance > 0.5 ? '+' + balance : balance < -0.5 ? String(balance) : '0';
+  var balDesc = balance > 0.5 ? '預繳餘額(待退或留作新約)' : balance < -0.5 ? '缺繳(房客需補繳)' : '已結清';
+
+  // 自動推薦選項(依 type + balance):
+  // 換約 + bal>0 → 退給房客;bal<0 → 房客補繳;bal=0 → 直接 mark
+  // 續約 + bal>0 → 可選 留作新約(預設)/ 退;bal<0 → 房客補繳;bal=0 → 直接 mark
+
+  var overlay = document.createElement('div');
+  overlay.id = 'closeAccountOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:420px;width:100%;border:2px solid ' + ident + ';">'
+    + '<div style="padding:12px 16px;background:' + ident + ';color:#fff;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;">'
+      + '<span style="font-size:14px;font-weight:700;">📁 戶 ' + unit + ' 結清</span>'
+      + '<button onclick="document.getElementById(\'closeAccountOverlay\').remove()" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">✕</button>'
+    + '</div>'
+    + '<div style="padding:14px;font-size:13px;">'
+      // 當前餘額
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:' + balColor + '15;border:1.5px solid ' + balColor + ';border-radius:8px;margin-bottom:12px;">'
+        + '<span style="color:#475569;">當前預繳餘額</span>'
+        + '<span style="color:' + balColor + ';font-size:22px;font-weight:800;">' + balText + ' 元</span>'
+      + '</div>'
+      + '<div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">📌 ' + balDesc + '</div>'
+      // 結清類型(換約/續約)
+      + '<div style="margin-bottom:10px;"><div style="font-size:12px;font-weight:700;color:#475569;margin-bottom:5px;">結清類型</div>'
+      + '<label style="display:block;padding:6px;border:1px solid #cbd5e1;border-radius:5px;margin-bottom:4px;cursor:pointer;"><input type="radio" name="caType" value="換約" checked onchange="_refreshCloseAccountUI()" style="margin-right:6px;">🔄 換約(新房客接手)</label>'
+      + '<label style="display:block;padding:6px;border:1px solid #cbd5e1;border-radius:5px;cursor:pointer;"><input type="radio" name="caType" value="續約" onchange="_refreshCloseAccountUI()" style="margin-right:6px;">📝 續約(同房客新合約)</label>'
+      + '</div>'
+      // 處理方式(動態,依 balance + type)
+      + '<div id="caAction" style="margin-bottom:10px;"></div>'
+      // 日期
+      + '<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-bottom:10px;">'
+        + '<div><div style="font-size:11px;color:#64748b;margin-bottom:3px;">📅 結清日期</div>'
+        + '<input type="date" id="caDate" value="' + today + '" style="width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;color:' + ident + ';font-weight:700;"></div>'
+        + '<div><div style="font-size:11px;color:#64748b;margin-bottom:3px;">📝 備註</div>'
+        + '<input type="text" id="caNote" placeholder="e.g. 王先生退房 / 續約至 116/06" style="width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;"></div>'
+      + '</div>'
+    + '</div>'
+    + '<div style="padding:10px 14px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;">'
+      + '<button onclick="document.getElementById(\'closeAccountOverlay\').remove()" style="background:#94a3b8;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">取消</button>'
+      + '<button onclick="_saveCloseAccount(\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">✓ 確定結清</button>'
+    + '</div>'
+  + '</div>';
+  document.body.appendChild(overlay);
+  window._caCtx = { unit: unit, balance: balance, ident: ident };
+  _refreshCloseAccountUI();
+}
+
+function _refreshCloseAccountUI() {
+  var ctx = window._caCtx;
+  if (!ctx) return;
+  var typeRadios = document.getElementsByName('caType');
+  var type = '換約';
+  for (var i = 0; i < typeRadios.length; i++) if (typeRadios[i].checked) type = typeRadios[i].value;
+  var bal = ctx.balance;
+  var actionDiv = document.getElementById('caAction');
+  if (!actionDiv) return;
+
+  var html = '<div style="font-size:12px;font-weight:700;color:#475569;margin-bottom:5px;">處理方式</div>';
+  if (Math.abs(bal) < 0.5) {
+    html += '<div style="padding:8px;background:#f0fdf4;border:1px solid #16a34a;border-radius:5px;color:#16a34a;font-weight:700;">✓ 餘額為 0,直接建立結清標記(無金額異動)</div>';
+    html += '<input type="hidden" id="caAction_val" value="none">';
+  } else if (bal > 0.5) {
+    // 預繳餘額
+    if (type === '換約') {
+      html += '<label style="display:block;padding:6px;border:1px solid #16a34a;border-radius:5px;background:#f0fdf4;"><input type="radio" name="caAct" value="refund" checked style="margin-right:6px;">💸 退給原房客 ' + bal + ' 元(建立提款紀錄)</label>';
+    } else {
+      // 續約
+      html += '<label style="display:block;padding:6px;border:1px solid #16a34a;border-radius:5px;background:#f0fdf4;margin-bottom:4px;"><input type="radio" name="caAct" value="keep" checked style="margin-right:6px;">📥 留作新合約預繳(無金額異動,僅標記)</label>';
+      html += '<label style="display:block;padding:6px;border:1px solid #cbd5e1;border-radius:5px;cursor:pointer;"><input type="radio" name="caAct" value="refund" style="margin-right:6px;">💸 退給房客 ' + bal + ' 元</label>';
+    }
+  } else {
+    // 缺繳
+    html += '<label style="display:block;padding:6px;border:1px solid #dc2626;border-radius:5px;background:#fef2f2;"><input type="radio" name="caAct" value="collect" checked style="margin-right:6px;">🟢 房客補繳 ' + Math.abs(bal) + ' 元(建立補繳紀錄)</label>';
+  }
+  actionDiv.innerHTML = html;
+}
+
+function _saveCloseAccount(unit) {
+  var date = (document.getElementById('caDate') || {}).value || '';
+  var noteUser = (document.getElementById('caNote') || {}).value || '';
+  if (!date) { showToast('⚠️ 請選日期'); return; }
+  var typeRadios = document.getElementsByName('caType');
+  var caType = '換約';
+  for (var i = 0; i < typeRadios.length; i++) if (typeRadios[i].checked) caType = typeRadios[i].value;
+  var actRadios = document.getElementsByName('caAct');
+  var act = (document.getElementById('caAction_val') || {}).value || '';
+  for (var j = 0; j < actRadios.length; j++) if (actRadios[j].checked) act = actRadios[j].value;
+  var bal = Math.round(_computeBalance(unit));
+
+  var note = '📁 ' + caType + (noteUser ? ' · ' + noteUser : '');
+  // 計算 received(正)/出款(負);type=close 統一標記
+  var amount = 0;
+  if (act === 'refund')  amount = -Math.abs(bal);   // 退給房客 → balance 減 abs
+  else if (act === 'collect') amount = Math.abs(bal);  // 房客補繳 → balance 加 abs
+  // act === 'keep' or 'none' → amount=0(只 mark,不動 balance)
+
+  var history = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+  history.push({
+    unit: unit,
+    type: 'close',
+    closeType: caType,        // 換約 / 續約
+    closeAction: act,         // refund / collect / keep / none
+    settledAt: new Date().toISOString(),
+    accountDate: date,
+    payDate: date,
+    carryIn: 0,
+    received: amount,
+    adjust: 0,
+    carryOut: amount,
+    totalPaidDue: 0,
+    paidItems: [],
+    pickerSelection: [],
+    note: note
+  });
+  localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+
+  var newBal = Math.round(_computeBalance(unit));
+  showToast('📁 戶 ' + unit + ' ' + caType + ' 已結清 · balance: ' + newBal);
+
+  var ov = document.getElementById('closeAccountOverlay');
+  if (ov) ov.remove();
+  renderAccountStatus();
+  renderSummary();
+}
+
+// 編輯 預繳/提款 history(獨立 modal,簡化:只改日期 / 金額 / 備註)
+function editWalletTxnRecord(settledAt, unit) {
+  var history = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+  var h = history.find(function(x) { return x.settledAt === settledAt; });
+  if (!h) { showToast('⚠️ 找不到該筆'); return; }
+  var isPrepay = h.type === 'prepay';
+  var isClose = h.type === 'close';
+  var titleIcon = isClose ? '📁' : isPrepay ? '💰' : '💸';
+  var titleLabel = isClose ? ('結清 (' + (h.closeType || '') + ')') : isPrepay ? '預繳(房客存入)' : '提款(退錢給房客)';
+  var amtLabel = isClose ? '💵 金額(正=房客補繳,負=退給房客,0=僅標記)' : isPrepay ? '💵 預繳金額' : '💸 提款金額';
+  var amtColor = isClose ? '#64748b' : isPrepay ? '#16a34a' : '#dc2626';
+  var ident = UNIT_COLOR[unit];
+  // close: signed (可正可負可 0);prepay/withdraw: abs UI
+  var rawAmt = Math.round(parseFloat(h.received) || 0);
+  var displayAmount = isClose ? rawAmt : Math.abs(rawAmt);
+
+  var overlay = document.createElement('div');
+  overlay.id = 'editWalletTxnOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:360px;width:100%;border:2px solid ' + amtColor + ';">'
+    + '<div style="padding:12px 16px;background:' + amtColor + ';color:#fff;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;">'
+      + '<span style="font-size:14px;font-weight:700;">' + titleIcon + ' 修改 戶 ' + unit + ' ' + titleLabel + '</span>'
+      + '<button onclick="document.getElementById(\'editWalletTxnOverlay\').remove()" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">✕</button>'
+    + '</div>'
+    + '<div style="padding:14px;font-size:13px;">'
+      + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">📅 日期</div>'
+      + '<input type="date" id="ewtxDate" value="' + (h.accountDate || '') + '" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;color:' + ident + ';font-weight:700;"></div>'
+      + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">' + amtLabel + '</div>'
+      + '<input type="number" id="ewtxAmount" value="' + displayAmount + '" step="1"' + (isClose ? '' : ' min="1"') + ' style="width:100%;padding:8px;border:1px solid ' + amtColor + ';border-radius:5px;font-size:18px;color:' + amtColor + ';font-weight:700;text-align:right;"> 元</div>'
+      + '<div style="margin-bottom:10px;"><div style="font-size:11px;color:#64748b;margin-bottom:3px;">📝 備註</div>'
+      + '<input type="text" id="ewtxNote" value="' + (h.note || '').replace(/"/g, '&quot;') + '" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px;"></div>'
+    + '</div>'
+    + '<div style="padding:10px 14px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;">'
+      + '<button onclick="document.getElementById(\'editWalletTxnOverlay\').remove()" style="background:#94a3b8;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">取消</button>'
+      + '<button onclick="_saveEditedWalletTxn(\'' + settledAt + '\',\'' + unit + '\')" style="background:' + amtColor + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;">✓ 確定更新</button>'
+    + '</div>'
+  + '</div>';
+  document.body.appendChild(overlay);
+}
+
+function _saveEditedWalletTxn(settledAt, unit) {
+  var history = JSON.parse(localStorage.getItem('renthousePaymentHistory') || '[]');
+  var idx = history.findIndex(function(x) { return x.settledAt === settledAt; });
+  if (idx < 0) { showToast('⚠️ 找不到該筆'); return; }
+  var h = history[idx];
+  var isPrepay = h.type === 'prepay';
+  var isClose = h.type === 'close';
+  var date = (document.getElementById('ewtxDate') || {}).value || h.accountDate;
+  var rawAmount = Math.round(parseFloat((document.getElementById('ewtxAmount') || {}).value || '0') || 0);
+  var note = (document.getElementById('ewtxNote') || {}).value || '';
+  if (!isClose && rawAmount <= 0) { showToast('⚠️ 金額需 > 0'); return; }
+  // close: signed as-is;prepay: +X;withdraw: -X
+  var signedAmount = isClose ? rawAmount : (isPrepay ? rawAmount : -rawAmount);
+
+  history[idx] = Object.assign({}, h, {
+    accountDate: date,
+    payDate: date,
+    received: signedAmount,
+    carryOut: signedAmount,
+    note: note,
+    updatedAt: new Date().toISOString()
+  });
+  localStorage.setItem('renthousePaymentHistory', JSON.stringify(history));
+  showToast('✓ 戶 ' + unit + ' ' + (isClose ? '結清' : isPrepay ? '預繳' : '提款') + ' 已更新');
+
+  renderAccountStatus();
+  var ov = document.getElementById('editWalletTxnOverlay');
   if (ov) ov.remove();
   var hov = document.getElementById('paymentHistoryOverlay');
   if (hov) { hov.remove(); viewPaymentHistory(unit); }
