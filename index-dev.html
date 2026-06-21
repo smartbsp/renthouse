@@ -3660,12 +3660,9 @@ function _unitAccount(unit) {
       + '<span style="color:#475569;font-weight:600;">📅 記帳日期</span>'
       + '<input type="date" value="' + dateVal + '" ' + disAttr + ' onchange="setAccountDate(\'' + unit + '\', this.value)" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:13px;font-weight:700;color:' + ident + ';' + disStyle + '">'
     + '</div>'
-    // ╔══ 房客面應繳區(可列印) ══╗
+    // ╔══ 應繳明細 ══╗
     + '<div style="background:#fff;border:1.5px solid ' + ident + ';border-radius:8px;padding:8px;margin-bottom:8px;">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
-      + '<span style="font-size:13px;font-weight:700;color:' + ident + ';">📋 應繳明細(給房客)</span>'
-      + '<button onclick="printInvoice(\'' + unit + '\')" style="background:' + ident + ';color:#fff;border:none;font-size:11px;padding:3px 9px;border-radius:5px;cursor:pointer;font-weight:700;">🖨 列印</button>'
-    + '</div>'
+    + '<div style="font-size:13px;font-weight:700;color:' + ident + ';margin-bottom:6px;">📋 應繳明細</div>'
     + '<div style="background:#f8fafc;border-radius:6px;padding:6px;margin-bottom:6px;">'
       + detailRows
     + '</div>'
@@ -3696,27 +3693,10 @@ function _unitAccount(unit) {
           + 'style="width:85px;text-align:right;padding:5px 6px;border:1.5px solid #f59e0b;border-radius:4px;font-size:14px;color:#b45309;font-weight:700;' + disStyle + '">'
         + '</div>';
       })()
-    + '<div style="display:flex;justify-content:space-between;padding:6px 6px;border-top:1px solid #cbd5e1;margin-top:4px;align-items:center;font-size:14px;">'
-      + '<span style="font-weight:600;">本期應繳金額 <span style="font-size:10px;color:#94a3b8;">(應收+調整)</span></span>'
-      + '<span style="color:' + ident + ';font-size:18px;font-weight:700;">' + dueThis.toFixed(0) + '</span>'
+    + '<div style="display:flex;justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;border-radius:4px;">'
+      + '<span style="font-weight:700;font-size:15px;">本期應繳金額 <span style="font-size:10px;color:#94a3b8;font-weight:500;">(應收+調整)</span></span>'
+      + '<span style="color:' + ident + ';font-size:22px;font-weight:800;">' + dueThis.toFixed(0) + '</span>'
     + '</div>'
-    // 預繳折抵 / 缺繳補繳:wallet 帶下來一起算
-    + (function() {
-        if (balanceBefore > 0.5) {
-          var folded = Math.min(balanceBefore, dueThis);
-          return '<div style="display:flex;justify-content:space-between;padding:4px 6px;align-items:center;font-size:13px;color:#16a34a;">'
-            + '<span><span style="font-weight:700;font-size:15px;">−</span> 預繳折抵 <span style="font-size:10px;color:#94a3b8;">(從預繳帳戶)</span></span>'
-            + '<span style="font-weight:700;">' + folded.toFixed(0) + '</span>'
-          + '</div>';
-        }
-        if (balanceBefore < -0.5) {
-          return '<div style="display:flex;justify-content:space-between;padding:4px 6px;align-items:center;font-size:13px;color:#dc2626;">'
-            + '<span><span style="font-weight:700;font-size:15px;">+</span> 上期缺繳 <span style="font-size:10px;color:#94a3b8;">(累欠待補)</span></span>'
-            + '<span style="font-weight:700;">' + Math.abs(balanceBefore).toFixed(0) + '</span>'
-          + '</div>';
-        }
-        return '';
-      })()
     // ★ V3.7:還需付 = max(0, sumDue + adjust − balanceBefore − 實收)
     //   只在 remaining > 0 顯示;= 0 時整 row 隱藏
     + (function() {
@@ -3924,7 +3904,6 @@ function setReceived(unit, val) {
   var n = parseFloat(val) || 0;
   localStorage.setItem('renthouseReceivedThis' + unit, String(n));
   _liveUpdateBalanceRow(unit);
-  _scheduleRender();
 }
 
 // ★ 拆 現金 / 匯款 input(_liveSumCashXfer 會自動加總寫進 renthouseReceivedThisX)
@@ -3947,14 +3926,13 @@ function _liveSumCashXfer(unit) {
   var totalEl = document.getElementById('receivedTotal' + unit);
   if (totalEl) totalEl.textContent = Math.round(total);
   _liveUpdateBalanceRow(unit);
-  _scheduleRender();
+  // 不 schedule render(避免 user 打字時 input 被重建)
 }
 
 function setAdjust(unit, val) {
   var n = parseFloat(val) || 0;
   localStorage.setItem('renthouseAdjust' + unit, String(n));
   _liveUpdateBalanceRow(unit);
-  _scheduleRender();
 }
 
 // 找該戶最近一筆 換約 (closeType='換約') 的 settledAt — 用來界定「當前 era」起點
