@@ -3724,7 +3724,7 @@ function _unitAccount(unit) {
         var hidden = remaining <= 0 ? 'display:none;' : '';
         return '<div id="needsPayRow' + unit + '" data-unit="' + unit + '" data-bal-before="' + balanceBefore + '" style="' + hidden + 'display:' + (remaining > 0 ? 'flex' : 'none') + ';justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;border-radius:4px;">'
           + '<span id="needsPayLabel' + unit + '" style="font-weight:700;font-size:16px;color:' + ident + ';">還需付</span>'
-          + '<span id="needsPayVal' + unit + '" style="color:' + color + ';font-size:28px;font-weight:800;">' + remaining + '</span>'
+          + '<span id="needsPayVal' + unit + '" style="color:' + ident + ';font-size:28px;font-weight:800;">' + remaining + '</span>'
         + '</div>';
       })()
     + '</div>'  // ╚══ 房客面 ══╝
