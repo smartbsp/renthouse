@@ -3197,7 +3197,7 @@ function renderAccountStatus() {
         + '</span>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;font-weight:700;color:' + balColor + ';">'
-        + '<span style="font-size:12px;">' + balIcon + ' wallet (' + subText + ')</span>'
+        + '<span style="font-size:12px;">' + balIcon + ' 錢包餘額 (' + subText + ')</span>'
         + '<span style="font-size:17px;">' + balText + ' 元</span>'
       + '</div>'
       + '<div onclick="showOutstandingDetail(\'' + unit + '\')" style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;padding-top:3px;border-top:1px dashed #e2e8f0;font-size:11px;color:#64748b;cursor:pointer;" title="點看明細">'
@@ -3717,14 +3717,14 @@ function _unitAccount(unit) {
         }
         return '';
       })()
-    // ★ V3.5: 還需付 = max(0, adjust - balanceBefore - 實收) — 即時反映實收輸入
-    //   (=要讓 wallet 歸 0 還缺多少)
+    // ★ V3.7:還需付 = max(0, sumDue + adjust − balanceBefore − 實收)
+    //   = 結算後 wallet >= 0 還缺多少
     + (function() {
-        var remaining = Math.max(0, Math.round(adjustVal - balanceBefore - paidVal));
-        var label = remaining > 0 ? '還需付' : '✓ 結清(可儲存)';
+        var remaining = Math.max(0, Math.round(sumDue + adjustVal - balanceBefore - paidVal));
+        var label = remaining > 0 ? '還需付' : '✓ 結清';
         var color = remaining > 0 ? ident : '#16a34a';
         return '<div id="needsPayRow' + unit + '" data-unit="' + unit + '" data-bal-before="' + balanceBefore + '" style="display:flex;justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;border-radius:4px;">'
-          + '<span id="needsPayLabel' + unit + '" style="font-weight:700;font-size:16px;color:' + color + ';">' + label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(到 wallet 歸 0)</span></span>'
+          + '<span id="needsPayLabel' + unit + '" style="font-weight:700;font-size:16px;color:' + color + ';">' + label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(讓錢包餘額 ≥ 0 還缺)</span></span>'
           + '<span id="needsPayVal' + unit + '" style="color:' + color + ';font-size:28px;font-weight:800;">' + remaining + '</span>'
         + '</div>';
       })()
@@ -3795,18 +3795,10 @@ function _liveUpdateBalanceRow(unit) {
   var adj = parseFloat(localStorage.getItem('renthouseAdjust' + unit) || '0') || 0;
   var ident = UNIT_COLOR[unit];
 
-  // 還需付 = max(0, adj - balBefore - paid)
-  var remaining = Math.max(0, Math.round(adj - balBefore - paid));
-  var valEl = document.getElementById('needsPayVal' + unit);
+  // 還需付 = max(0, sumDue + adj − balBefore − paid)  (V3.7)
+  // 注意:sumDue 在下方算,要先暫存 ident 來算 label
   var labelEl = document.getElementById('needsPayLabel' + unit);
-  if (valEl && labelEl) {
-    var color = remaining > 0 ? ident : '#16a34a';
-    var label = remaining > 0 ? '還需付' : '✓ 結清(可儲存)';
-    valEl.textContent = remaining;
-    valEl.style.color = color;
-    labelEl.style.color = color;
-    labelEl.innerHTML = label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(到 wallet 歸 0)</span>';
-  }
+  var valEl = document.getElementById('needsPayVal' + unit);
 
   // ★ V3.7 結算後預繳 = balBefore + paid − sumDue − adj
   // sumDue 先算(picker collect)
@@ -3831,6 +3823,17 @@ function _liveUpdateBalanceRow(unit) {
     var balText = balAfter > 0.5 ? '+' + balAfter : balAfter < -0.5 ? String(balAfter) : '0';
     balAfterEl.textContent = balText;
     balAfterEl.style.color = balColor;
+  }
+
+  // ★ 即時 還需付(V3.7 公式:sumDue + adj − balBefore − paid)
+  if (labelEl && valEl) {
+    var remaining = Math.max(0, Math.round(sumDue + adj - balBefore - paid));
+    var color = remaining > 0 ? ident : '#16a34a';
+    var label = remaining > 0 ? '還需付' : '✓ 結清';
+    valEl.textContent = remaining;
+    valEl.style.color = color;
+    labelEl.style.color = color;
+    labelEl.innerHTML = label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(讓錢包餘額 ≥ 0 還缺)</span>';
   }
 
   // 同步 BALANCE 對帳 表的「結算後預繳」行(unit-specific cell)
