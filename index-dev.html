@@ -3718,13 +3718,12 @@ function _unitAccount(unit) {
         return '';
       })()
     // ★ V3.7:還需付 = max(0, sumDue + adjust − balanceBefore − 實收)
-    //   = 結算後 wallet >= 0 還缺多少
+    //   只在 remaining > 0 顯示;= 0 時整 row 隱藏
     + (function() {
         var remaining = Math.max(0, Math.round(sumDue + adjustVal - balanceBefore - paidVal));
-        var label = remaining > 0 ? '還需付' : '✓ 結清';
-        var color = remaining > 0 ? ident : '#16a34a';
-        return '<div id="needsPayRow' + unit + '" data-unit="' + unit + '" data-bal-before="' + balanceBefore + '" style="display:flex;justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;border-radius:4px;">'
-          + '<span id="needsPayLabel' + unit + '" style="font-weight:700;font-size:16px;color:' + color + ';">' + label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(讓錢包餘額 ≥ 0 還缺)</span></span>'
+        var hidden = remaining <= 0 ? 'display:none;' : '';
+        return '<div id="needsPayRow' + unit + '" data-unit="' + unit + '" data-bal-before="' + balanceBefore + '" style="' + hidden + 'display:' + (remaining > 0 ? 'flex' : 'none') + ';justify-content:space-between;padding:8px 6px;border-top:2px solid ' + ident + ';border-bottom:2px solid ' + ident + ';margin-top:4px;align-items:center;background:#fff;border-radius:4px;">'
+          + '<span id="needsPayLabel' + unit + '" style="font-weight:700;font-size:16px;color:' + ident + ';">還需付</span>'
           + '<span id="needsPayVal' + unit + '" style="color:' + color + ';font-size:28px;font-weight:800;">' + remaining + '</span>'
         + '</div>';
       })()
@@ -3828,12 +3827,11 @@ function _liveUpdateBalanceRow(unit) {
   // ★ 即時 還需付(V3.7 公式:sumDue + adj − balBefore − paid)
   if (labelEl && valEl) {
     var remaining = Math.max(0, Math.round(sumDue + adj - balBefore - paid));
-    var color = remaining > 0 ? ident : '#16a34a';
-    var label = remaining > 0 ? '還需付' : '✓ 結清';
     valEl.textContent = remaining;
-    valEl.style.color = color;
-    labelEl.style.color = color;
-    labelEl.innerHTML = label + ' <span style="font-size:10px;color:#94a3b8;font-weight:500;">(讓錢包餘額 ≥ 0 還缺)</span>';
+    valEl.style.color = ident;
+    labelEl.style.color = ident;
+    // 整 row 在 = 0 時隱藏
+    if (row) row.style.display = remaining > 0 ? 'flex' : 'none';
   }
 
   // 同步 BALANCE 對帳 表的「結算後預繳」行(unit-specific cell)
