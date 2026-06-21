@@ -3728,46 +3728,71 @@ function _unitAccount(unit) {
         + '</div>';
       })()
     + '</div>'  // ╚══ 房客面 ══╝
-    // ╔══ 房東面 收款記帳區 ══╗
-    + '<div style="background:#f1f5f9;border:1px dashed #94a3b8;border-radius:8px;padding:8px;margin-bottom:6px;">'
-    // 實收款項
-    + '<div style="display:flex;justify-content:space-between;padding:4px 0;align-items:center;font-size:14px;">'
-      + '<span><span style="color:#16a34a;font-weight:700;font-size:16px;">+</span> 實收款項 <span style="font-size:11px;color:#94a3b8;">(本期匯款)</span></span>'
-      + '<input type="number" step="1" value="' + (paidVal || '') + '" placeholder="0" ' + disAttr + ' oninput="setReceived(\'' + unit + '\', this.value)" '
-      + 'style="width:95px;text-align:right;padding:5px 6px;border:1.5px solid #16a34a;border-radius:4px;font-size:14px;color:#16a34a;font-weight:700;' + disStyle + '">'
-    + '</div>'
-    + '<div style="display:flex;justify-content:space-between;padding:4px 0;align-items:center;font-size:13px;">'
-      + '<span style="color:#475569;">📅 繳款日期</span>'
-      + '<input type="date" value="' + payDateVal + '" ' + disAttr + ' onchange="setPayDate(\'' + unit + '\', this.value)" '
-      + 'style="padding:4px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:13px;color:#475569;' + disStyle + '">'
-    + '</div>'
-    // 結算後預繳(自動算)
-    + '<div style="display:flex;justify-content:space-between;padding:8px 6px;border-top:1px solid #cbd5e1;margin-top:6px;align-items:center;background:#fff;border-radius:6px;">'
-      + '<span style="font-weight:700;font-size:15px;">💰 結算後預繳</span>'
-      + '<span id="balAfter' + unit + '" style="color:' + balAfterColor + ';font-size:22px;font-weight:800;">' + _bSign(balanceAfter) + '</span>'
-    + '</div>'
-    + '</div>'  // ╚══ 房東面 ══╝'
-    // 借貸平衡核實面板(即時)— 貸方只算本期實收,不含預繳(預繳是另一條 ledger)
+    // ╔══ 收款明細 (房東面) ══╗
     + (function() {
-        var debit = sumDue + adjustVal;       // 借方: 本期繳款單據 + 調整
-        var credit = paidVal;                  // 貸方: 本期實收
-        var diff = debit - credit;
+        var cash = parseFloat(localStorage.getItem('renthouseReceivedCash' + unit) || '0') || 0;
+        var xfer = parseFloat(localStorage.getItem('renthouseReceivedXfer' + unit) || '0') || 0;
+        // 舊資料相容:有 paidVal 但沒 cash/xfer → 全進 cash
+        if (cash === 0 && xfer === 0 && paidVal > 0) cash = paidVal;
+        var sumCashXfer = cash + xfer;
+        return '<div style="background:#f1f5f9;border:1px dashed #94a3b8;border-radius:8px;padding:8px;margin-bottom:6px;">'
+          + '<div style="font-size:13px;font-weight:700;color:#475569;margin-bottom:6px;">💴 收款明細</div>'
+          // 預繳餘額(結算前)
+          + '<div style="display:flex;justify-content:space-between;padding:4px 6px;align-items:center;font-size:13px;background:#fff;border-radius:6px;margin-bottom:6px;">'
+            + '<span style="color:#475569;">💰 預繳餘額(結算前)</span>'
+            + '<span style="color:' + balBeforeColor + ';font-weight:700;font-size:14px;">' + _bSign(balanceBefore) + '</span>'
+          + '</div>'
+          // 彙收款項 (現金 + 匯款)
+          + '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:6px;margin-bottom:6px;">'
+            + '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">彙收款項:</div>'
+            + '<div style="display:flex;justify-content:space-between;padding:3px 0;align-items:center;font-size:13px;">'
+              + '<span><input type="checkbox" ' + (cash > 0 ? 'checked' : '') + ' style="vertical-align:middle;margin-right:4px;"> 💵 現金</span>'
+              + '<input type="number" step="1" value="' + (cash || '') + '" placeholder="0" ' + disAttr + ' oninput="setReceivedCash(\'' + unit + '\', this.value)" '
+              + 'style="width:95px;text-align:right;padding:4px 6px;border:1.5px solid #16a34a;border-radius:4px;font-size:13px;color:#16a34a;font-weight:700;' + disStyle + '">'
+            + '</div>'
+            + '<div style="display:flex;justify-content:space-between;padding:3px 0;align-items:center;font-size:13px;">'
+              + '<span><input type="checkbox" ' + (xfer > 0 ? 'checked' : '') + ' style="vertical-align:middle;margin-right:4px;"> 🏦 匯款</span>'
+              + '<input type="number" step="1" value="' + (xfer || '') + '" placeholder="0" ' + disAttr + ' oninput="setReceivedXfer(\'' + unit + '\', this.value)" '
+              + 'style="width:95px;text-align:right;padding:4px 6px;border:1.5px solid #0284c7;border-radius:4px;font-size:13px;color:#0284c7;font-weight:700;' + disStyle + '">'
+            + '</div>'
+            + '<div style="display:flex;justify-content:space-between;padding:5px 4px 0;border-top:1px dashed #cbd5e1;margin-top:3px;font-size:13px;font-weight:700;">'
+              + '<span>本期收款合計</span>'
+              + '<span id="receivedTotal' + unit + '" style="color:#16a34a;font-size:15px;">' + Math.round(sumCashXfer) + '</span>'
+            + '</div>'
+          + '</div>'
+          // 繳款日期
+          + '<div style="display:flex;justify-content:space-between;padding:4px 0;align-items:center;font-size:13px;">'
+            + '<span style="color:#475569;">📅 繳款日期</span>'
+            + '<input type="date" value="' + payDateVal + '" ' + disAttr + ' onchange="setPayDate(\'' + unit + '\', this.value)" '
+            + 'style="padding:4px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:13px;color:#475569;' + disStyle + '">'
+          + '</div>'
+        + '</div>';
+      })()
+    // 借貸平衡 panel(對應手繪 format:借/貸/狀態/轉預繳)
+    + (function() {
+        var debit = sumDue + adjustVal;                                        // 借方
+        var positivePrepay = Math.max(0, balanceBefore);                      // 預繳餘額(只算正)
+        var creditPrepay = positivePrepay;
+        var creditCashXfer = paidVal;
+        var credit = creditPrepay + creditCashXfer;
+        var diff = debit - credit;                                             // > 0 缺繳;< 0 溢繳
         var balanced = Math.abs(diff) < 0.5;
-        var bg = balanced ? '#f0fdf4' : '#fef3c7';
-        var brd = balanced ? '#16a34a' : '#f59e0b';
-        var statusText = balanced
-          ? '<span style="color:#16a34a;">✓ 借貸平衡(本期實收 = 本期繳款)</span>'
-          : (diff > 0 ? '<span style="color:#f59e0b;">⚠️ 借 > 貸 還欠 ' + Math.round(diff) + '(可用預繳折抵)</span>'
-                      : '<span style="color:#16a34a;">✨ 貸 > 借 多收 ' + Math.round(-diff) + '(進預繳餘額)</span>');
-        return '<div id="balanceCheckPanel' + unit + '" style="margin-top:8px;padding:6px 8px;background:' + bg + ';border:1.5px solid ' + brd + ';border-radius:6px;font-size:11px;line-height:1.5;">'
-          + '<div style="display:flex;justify-content:space-between;color:#64748b;">'
-            + '<span>借方 = 繳款單據 + 調整</span><span style="font-weight:700;color:#dc2626;">' + Math.round(debit) + '</span>'
+        var bg = balanced ? '#f0fdf4' : (diff > 0 ? '#fef3c7' : '#dbeafe');
+        var brd = balanced ? '#16a34a' : (diff > 0 ? '#f59e0b' : '#0284c7');
+        var statusText, statusColor;
+        if (balanced) { statusText = '✓ 已結清'; statusColor = '#16a34a'; }
+        else if (diff > 0) { statusText = '⚠️ 欠款 ' + Math.round(diff) + '(轉預繳缺)'; statusColor = '#dc2626'; }
+        else { statusText = '✨ 溢繳 ' + Math.round(-diff) + '(轉預繳)'; statusColor = '#16a34a'; }
+        return '<div id="balanceCheckPanel' + unit + '" style="margin-top:8px;padding:8px 10px;background:' + bg + ';border:1.5px solid ' + brd + ';border-radius:6px;font-size:12px;line-height:1.6;">'
+          + '<div style="font-size:11px;color:#475569;font-weight:700;margin-bottom:4px;">📐 借貸平衡核實</div>'
+          + '<div style="display:flex;justify-content:space-between;">'
+            + '<span style="color:#64748b;">借方 (本期應繳金額)</span><span id="balDebit' + unit + '" style="font-weight:700;color:#dc2626;">' + Math.round(debit) + '</span>'
           + '</div>'
-          + '<div style="display:flex;justify-content:space-between;color:#64748b;">'
-            + '<span>貸方 = 本期實收</span><span style="font-weight:700;color:#16a34a;">' + Math.round(credit) + '</span>'
+          + '<div style="display:flex;justify-content:space-between;">'
+            + '<span style="color:#64748b;">貸方 = 預繳 ' + Math.round(creditPrepay) + ' + 收款 <span id="balCreditCashXfer' + unit + '">' + Math.round(creditCashXfer) + '</span></span><span id="balCredit' + unit + '" style="font-weight:700;color:#16a34a;">' + Math.round(credit) + '</span>'
           + '</div>'
-          + '<div style="display:flex;justify-content:space-between;padding-top:3px;margin-top:3px;border-top:1px dashed ' + brd + ';font-weight:700;">'
-            + '<span>狀態</span><span id="balanceCheckStatus' + unit + '">' + statusText + '</span>'
+          + '<div style="display:flex;justify-content:space-between;padding-top:4px;margin-top:4px;border-top:1px dashed ' + brd + ';font-weight:700;">'
+            + '<span>狀態</span><span id="balanceCheckStatus' + unit + '" style="color:' + statusColor + ';">' + statusText + '</span>'
           + '</div>'
         + '</div>';
       })()
@@ -3867,35 +3892,62 @@ function _liveUpdateBalanceRow(unit) {
     balTblTotalEl.style.color = tc;
   }
 
-  // 借貸平衡 panel(即時)
+  // 借貸平衡 panel(即時,對應手繪 format)
   var panel = document.getElementById('balanceCheckPanel' + unit);
   var statusEl = document.getElementById('balanceCheckStatus' + unit);
   if (panel && statusEl) {
     var debit = sumDue + adj;
-    var credit = paid;  // 不含預繳
+    var positivePrepay = Math.max(0, balBefore);
+    var credit = positivePrepay + paid;
     var diff = debit - credit;
     var balanced = Math.abs(diff) < 0.5;
-    var bg = balanced ? '#f0fdf4' : '#fef3c7';
-    var brd = balanced ? '#16a34a' : '#f59e0b';
+    var bg = balanced ? '#f0fdf4' : (diff > 0 ? '#fef3c7' : '#dbeafe');
+    var brd = balanced ? '#16a34a' : (diff > 0 ? '#f59e0b' : '#0284c7');
     panel.style.background = bg;
     panel.style.borderColor = brd;
-    var statusText = balanced
-      ? '<span style="color:#16a34a;">✓ 借貸平衡(本期實收 = 本期繳款)</span>'
-      : (diff > 0 ? '<span style="color:#f59e0b;">⚠️ 借 > 貸 還欠 ' + Math.round(diff) + '(可用預繳折抵)</span>'
-                  : '<span style="color:#16a34a;">✨ 貸 > 借 多收 ' + Math.round(-diff) + '(進預繳餘額)</span>');
+    var statusText, statusColor;
+    if (balanced) { statusText = '✓ 已結清'; statusColor = '#16a34a'; }
+    else if (diff > 0) { statusText = '⚠️ 欠款 ' + Math.round(diff) + '(轉預繳缺)'; statusColor = '#dc2626'; }
+    else { statusText = '✨ 溢繳 ' + Math.round(-diff) + '(轉預繳)'; statusColor = '#16a34a'; }
     statusEl.innerHTML = statusText;
-    // 更新 debit / credit 數字 (rows 0/1)
-    var rows = panel.querySelectorAll('div > span:last-child');
-    if (rows[0]) rows[0].textContent = Math.round(debit);
-    if (rows[1]) rows[1].textContent = Math.round(credit);
+    statusEl.style.color = statusColor;
+    var debitEl = document.getElementById('balDebit' + unit);
+    var creditEl = document.getElementById('balCredit' + unit);
+    var creditCXEl = document.getElementById('balCreditCashXfer' + unit);
+    if (debitEl) debitEl.textContent = Math.round(debit);
+    if (creditEl) creditEl.textContent = Math.round(credit);
+    if (creditCXEl) creditCXEl.textContent = Math.round(paid);
   }
 }
 
 function setReceived(unit, val) {
   var n = parseFloat(val) || 0;
   localStorage.setItem('renthouseReceivedThis' + unit, String(n));
-  _liveUpdateBalanceRow(unit);  // 即時(不 re-render)
-  _scheduleRender();              // 350ms 後再 full render(picker / BALANCE 對帳 等)
+  _liveUpdateBalanceRow(unit);
+  _scheduleRender();
+}
+
+// ★ 拆 現金 / 匯款 input(_liveSumCashXfer 會自動加總寫進 renthouseReceivedThisX)
+function setReceivedCash(unit, val) {
+  var n = parseFloat(val) || 0;
+  localStorage.setItem('renthouseReceivedCash' + unit, String(n));
+  _liveSumCashXfer(unit);
+}
+function setReceivedXfer(unit, val) {
+  var n = parseFloat(val) || 0;
+  localStorage.setItem('renthouseReceivedXfer' + unit, String(n));
+  _liveSumCashXfer(unit);
+}
+function _liveSumCashXfer(unit) {
+  var cash = parseFloat(localStorage.getItem('renthouseReceivedCash' + unit) || '0') || 0;
+  var xfer = parseFloat(localStorage.getItem('renthouseReceivedXfer' + unit) || '0') || 0;
+  var total = cash + xfer;
+  localStorage.setItem('renthouseReceivedThis' + unit, String(total));
+  // 更新「本期收款合計」 span
+  var totalEl = document.getElementById('receivedTotal' + unit);
+  if (totalEl) totalEl.textContent = Math.round(total);
+  _liveUpdateBalanceRow(unit);
+  _scheduleRender();
 }
 
 function setAdjust(unit, val) {
@@ -4254,12 +4306,13 @@ function rolloverPeriod(unit) {
     console.log('[auto-distribute] skipped: received=' + received + ' (沒實收)');
   }
 
-  // 💾 = 寫歷史 + auto-distribute + 清空欄位(記帳日回今天 / 實收 / 調整 / payDate)+ picker 重抓未繳清
-  // 上期溢/缺繳由 _getLatestPrevDeficit 用「記帳日期」自動往前找最近一筆 carryOut
+  // 💾 = 寫歷史 + auto-distribute + 清空欄位
   var d = new Date();
   var today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   localStorage.setItem('renthouseAccountDate' + unit, today);
   localStorage.setItem('renthouseReceivedThis' + unit, '0');
+  localStorage.setItem('renthouseReceivedCash' + unit, '0');  // ★ 清現金
+  localStorage.setItem('renthouseReceivedXfer' + unit, '0');  // ★ 清匯款
   localStorage.setItem('renthouseAdjust' + unit, '0');
   localStorage.setItem('renthousePayDate' + unit, '');
   localStorage.setItem('renthouseLocked' + unit, '0');
@@ -4283,6 +4336,8 @@ function startNewPeriod(unit) {
   var today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   localStorage.setItem('renthouseAccountDate' + unit, today);
   localStorage.setItem('renthouseReceivedThis' + unit, '0');
+  localStorage.setItem('renthouseReceivedCash' + unit, '0');
+  localStorage.setItem('renthouseReceivedXfer' + unit, '0');
   localStorage.setItem('renthouseAdjust' + unit, '0');
   localStorage.setItem('renthousePayDate' + unit, '');
   localStorage.setItem('renthouseLocked' + unit, '0');
